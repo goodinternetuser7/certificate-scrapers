@@ -111,9 +111,9 @@ def main():
 
     print(f"\nParsed {len(records)} records.")
 
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    dated_file = f"certificates_{date_str}.csv"
-    latest_file = "certificates_latest.csv"
+    date_str = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    dated_file = f"ISCC certificates {date_str}.csv"
+    latest_file = "ISCC certificates latest.csv"
 
     fieldnames = ["Client Name", "Scope", "Issuing CB", "Expiry Date", "Country"]
     for path in (dated_file, latest_file):

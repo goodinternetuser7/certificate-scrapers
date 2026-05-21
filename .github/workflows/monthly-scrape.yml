@@ -30,7 +30,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add certificates_*.csv
+          git add "ISCC certificates"*.csv
           # Exit 0 even if there is nothing to commit
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly ISCC certificate scrape $(date -u +%Y-%m-%d)"
