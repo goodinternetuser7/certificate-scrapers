@@ -9,7 +9,7 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # needed to commit the CSV back to the repo
+      contents: write       # needed to commit the xlsx back to the repo
 
     steps:
       - name: Checkout
@@ -29,12 +29,13 @@ jobs:
       - name: Generate Excel dashboard
         run: python generate_excel.py
 
-      - name: Commit and push outputs
+      - name: Commit and push Excel files
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "ISCC certificates"*.csv "ISCC certificates"*.xlsx
-          # Exit 0 even if there is nothing to commit
+          # Stage xlsx files; remove any stale csvs that may be left in the repo
+          git rm -f --ignore-unmatch "ISCC certificates"*.csv
+          git add "ISCC certificates"*.xlsx
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly ISCC certificate scrape $(date -u +%Y-%m-%d)"
           git push

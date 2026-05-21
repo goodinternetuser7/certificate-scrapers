@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, PieChart, Reference
-from openpyxl.chart.series import DataPoint
+from openpyxl.chart.data_source import AxDataSource, StrRef
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -251,6 +251,9 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     pie_labels = Reference(ws, min_col=2, min_row=8, max_row=7 + TOP_N)
     pie.add_data(pie_data, titles_from_data=True)
     pie.set_categories(pie_labels)
+    # openpyxl defaults to numRef for categories; Excel requires strRef for text labels
+    for s in pie.series:
+        s.cat = AxDataSource(strRef=StrRef(f="'Dashboard'!$B$8:$B$17"))
     ws.add_chart(pie, "B19")
 
     # ── RIGHT: CB selector ──
@@ -304,6 +307,9 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     bar_labels    = Reference(ws, min_col=5, min_row=8, max_row=7 + TOP_N)
     bar.add_data(bar_data, titles_from_data=True)
     bar.set_categories(bar_labels)
+    # Fix category axis to use strRef (text labels) instead of numRef
+    for s in bar.series:
+        s.cat = AxDataSource(strRef=StrRef(f="'Dashboard'!$E$8:$E$17"))
     ws.add_chart(bar, "E19")
 
     # ── Save ──
