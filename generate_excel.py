@@ -102,7 +102,9 @@ def aggregate(rows):
 
 
 # ── Excel builder ─────────────────────────────────────────────────────────────
-def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, csv_path):
+def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, csv_path,
+                title="ISCC Active Certificates — Interactive Dashboard",
+                dated_out=None, latest_out=None):
     wb = Workbook()
 
     # ── Hidden helper: CB_Data (country → top CBs) ──
@@ -190,7 +192,7 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
 
     # ── Title ──
     ws.merge_cells("A1:H1")
-    ws["A1"].value     = "ISCC Active Certificates — Interactive Dashboard"
+    ws["A1"].value     = title
     ws["A1"].font      = Font(bold=True, size=18, color=WHITE, name="Calibri")
     ws["A1"].fill      = PatternFill("solid", fgColor=BLUE)
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
@@ -320,9 +322,11 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     ws.add_chart(bar, "E19")
 
     # ── Save ──
-    date_part = csv_path.replace("ISCC certificates ", "").replace(".csv", "")
-    dated_out  = f"ISCC certificates {date_part}.xlsx"
-    latest_out = "ISCC certificates latest.xlsx"
+    if dated_out is None:
+        date_part = csv_path.replace("ISCC certificates ", "").replace(".csv", "")
+        dated_out = f"ISCC certificates {date_part}.xlsx"
+    if latest_out is None:
+        latest_out = "ISCC certificates latest.xlsx"
     for path in (dated_out, latest_out):
         wb.save(path)
         print(f"Saved → {path}")
