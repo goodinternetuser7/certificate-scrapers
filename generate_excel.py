@@ -217,6 +217,13 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     ws.add_data_validation(dv_country)
     dv_country.sqref = "C5"
 
+    # ── Country total ──
+    label(ws["B6"], "Total certificates:", bold=False, size=10, color="888888")
+    ws["C6"].value     = "=COUNTIF(CertData[Country],$C$5)"
+    ws["C6"].font      = Font(bold=True, name="Calibri", size=12, color=BLUE)
+    ws["C6"].alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[6].height = 20
+
     # CB breakdown table
     hdr(ws["B7"], bg=BLUE); ws["B7"].value = "Certification Body"
     hdr(ws["C7"], bg=BLUE); ws["C7"].value = "Count"
