@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Scrapes active (valid) ISCC certificates from iscc-system.org and writes a CSV with:
-Client Name, Scope, Issuing CB, Expiry Date
+Client Name, Scope, Issuing CB, Expiry Date, Country
 """
 
 import csv
@@ -36,9 +36,18 @@ def parse_cards(html: str) -> list[dict]:
     records = []
 
     for card in soup.find_all("div", class_="is-certificate"):
-        # Client name — visible text inside h3 (excludes full address in title attr)
+        # Client name and country — visible text format: "Company,  City[, Region], Country"
+        # The double-space after the comma marks the boundary between company and location.
         name_el = card.select_one("h3.h4 span")
-        client_name = name_el.get_text(strip=True) if name_el else ""
+        raw_name = name_el.get_text() if name_el else ""
+        client_name = raw_name.strip()
+        country = ""
+        if ",  " in raw_name:
+            location_part = raw_name.split(",  ", 1)[1]
+            country = location_part.split(",")[-1].strip()
+        elif client_name:
+            # Fallback: last comma-separated token
+            country = client_name.split(",")[-1].strip()
 
         # Validity period "DD.MM.YY – DD.MM.YY" — take the end date
         date_el = card.select_one("div.date")
@@ -73,6 +82,7 @@ def parse_cards(html: str) -> list[dict]:
             "Scope": scope,
             "Issuing CB": issuing_cb,
             "Expiry Date": expiry,
+            "Country": country,
         })
 
     return records
@@ -105,7 +115,7 @@ def main():
     dated_file = f"certificates_{date_str}.csv"
     latest_file = "certificates_latest.csv"
 
-    fieldnames = ["Client Name", "Scope", "Issuing CB", "Expiry Date"]
+    fieldnames = ["Client Name", "Scope", "Issuing CB", "Expiry Date", "Country"]
     for path in (dated_file, latest_file):
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
