@@ -1,0 +1,12 @@
+# Local dev artifacts
+.venv/
+__pycache__/
+*.pyc
+
+# Scraper CSV output — only the .xlsx dashboards are committed (see workflows)
+ISCC certificates*.csv
+SURE certificates*.csv
+PEFC certificates*.csv
+
+# Debug scratch
+_pefc_*.html

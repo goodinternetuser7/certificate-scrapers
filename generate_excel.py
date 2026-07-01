@@ -104,7 +104,14 @@ def aggregate(rows):
 # ── Excel builder ─────────────────────────────────────────────────────────────
 def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, csv_path,
                 title="ISCC Active Certificates — Interactive Dashboard",
-                dated_out=None, latest_out=None):
+                dated_out=None, latest_out=None,
+                dim2_singular="Certification Body", dim2_short="CB",
+                data_fieldnames=("Client Name", "Scope", "Issuing CB", "Expiry Date", "Country"),
+                data_widths=(50, 25, 45, 15, 20),
+                kpi_total_label="Total Active Certificates",
+                default_prefix="ISCC certificates"):
+    data_fieldnames = list(data_fieldnames)
+    data_widths = list(data_widths)
     wb = Workbook()
 
     # ── Hidden helper: CB_Data (country → top CBs) ──
@@ -150,16 +157,17 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
 
     # ── Data sheet ──
     ws_data = wb.create_sheet("Data")
-    fieldnames = ["Client Name", "Scope", "Issuing CB", "Expiry Date", "Country"]
+    fieldnames = data_fieldnames
     ws_data.append(fieldnames)
     for col_idx, h in enumerate(fieldnames, 1):
         hdr(ws_data.cell(row=1, column=col_idx))
+    row_idx = 1  # header row, in case the CSV has no data rows
     with open(csv_path, newline="", encoding="utf-8") as f:
         for row_idx, r in enumerate(csv.DictReader(f), start=2):
             for col_idx, key in enumerate(fieldnames, 1):
                 ws_data.cell(row=row_idx, column=col_idx).value = r.get(key, "")
     n_data_rows = row_idx
-    col_widths = [50, 25, 45, 15, 20]
+    col_widths = data_widths
     for i, w in enumerate(col_widths, 1):
         ws_data.column_dimensions[get_column_letter(i)].width = w
     tab = Table(displayName="CertData", ref=f"A1:{get_column_letter(len(fieldnames))}{n_data_rows}")
@@ -198,7 +206,7 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
 
     # ── KPI row ──
-    label(ws["B3"], "Total Active Certificates", bold=True, size=10, color="888888")
+    label(ws["B3"], kpi_total_label, bold=True, size=10, color="888888")
     number(ws["C3"], len(rows))
     label(ws["E3"], "Countries", bold=True, size=10, color="888888")
     number(ws["F3"], len(country_totals))
@@ -227,7 +235,7 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     ws.row_dimensions[6].height = 20
 
     # CB breakdown table
-    hdr(ws["B7"], bg=BLUE); ws["B7"].value = "Certification Body"
+    hdr(ws["B7"], bg=BLUE); ws["B7"].value = dim2_singular
     hdr(ws["C7"], bg=BLUE); ws["C7"].value = "Count"
 
     for i in range(TOP_N):
@@ -252,7 +260,7 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
 
     # Pie chart (CB distribution for selected country)
     pie = PieChart()
-    pie.title  = "Certificates by CB (selected country)"
+    pie.title  = f"Certificates by {dim2_short} (selected country)"
     pie.style  = 10
     pie.width  = 18
     pie.height = 14
@@ -266,7 +274,7 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     ws.add_chart(pie, "B19")
 
     # ── RIGHT: CB selector ──
-    label(ws["E5"], "Select CB:", bold=True, size=12)
+    label(ws["E5"], f"Select {dim2_short}:", bold=True, size=12)
     ws["F5"].value = cb_totals[0][0]                # default = largest CB
     ws["F5"].font  = Font(bold=True, name="Calibri", size=12)
     ws["F5"].fill  = PatternFill("solid", fgColor=LIGHT_BLUE)
@@ -308,7 +316,7 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     bar = BarChart()
     bar.type      = "bar"
     bar.grouping  = "clustered"
-    bar.title     = "Top Countries for Selected CB"
+    bar.title     = f"Top Countries for Selected {dim2_short}"
     bar.style     = 10
     bar.width     = 18
     bar.height    = 14
@@ -323,10 +331,10 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
 
     # ── Save ──
     if dated_out is None:
-        date_part = csv_path.replace("ISCC certificates ", "").replace(".csv", "")
-        dated_out = f"ISCC certificates {date_part}.xlsx"
+        date_part = csv_path.replace(f"{default_prefix} ", "").replace(".csv", "")
+        dated_out = f"{default_prefix} {date_part}.xlsx"
     if latest_out is None:
-        latest_out = "ISCC certificates latest.xlsx"
+        latest_out = f"{default_prefix} latest.xlsx"
     for path in (dated_out, latest_out):
         wb.save(path)
         print(f"Saved → {path}")
