@@ -32,6 +32,7 @@ QUERYDATA_URL = ("https://wabi-west-europe-f-primary-api.analysis.windows.net"
                  "/public/reports/querydata?synchronous=true")
 WINDOW = 500                # rows per request (the visual's page size)
 REQUEST_DELAY = 0.1
+MAX_PAGES = 4000            # backstop against a runaway paging loop (~2M rows)
 
 # Semantic query for the certificate detail-table visual, captured from the report.
 # Columns (projection order) map to OUTPUT_FIELDS below. Filters: status = Valid,
@@ -87,9 +88,12 @@ def decode_window(ds):
     Each row after the first carries only changed columns: the `R` bitmask marks
     columns repeated from the previous row and `Ø` marks nulls; dictionary columns
     hold an index into `ValueDicts`."""
-    dm = ds["PH"][0]["DM0"]
+    ph = ds.get("PH") or [{}]
+    dm = ph[0].get("DM0") or []
+    if not dm:                                   # empty page -> nothing to decode
+        return [], ds.get("RT")
     vdicts = ds.get("ValueDicts", {})
-    col_dict = {i: c.get("DN") for i, c in enumerate(dm[0]["S"])}  # col -> value-dict name
+    col_dict = {i: c.get("DN") for i, c in enumerate(dm[0].get("S", []))}  # col -> dict name
 
     rows, prev = [], [None] * NCOL
     for item in dm:
@@ -122,7 +126,10 @@ def decode_window(ds):
 def to_date(ms):
     if not isinstance(ms, (int, float)):
         return ""
-    return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%d")
+    try:
+        return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%d")
+    except (OverflowError, OSError, ValueError):
+        return ""
 
 
 def to_record(row):
@@ -135,13 +142,19 @@ def to_record(row):
     return {k: rec[k] for k in FIELDNAMES}
 
 
+def row_key(rec):
+    return tuple(rec[k] for k in FIELDNAMES)
+
+
 def main():
     session = requests.Session()
     print("Querying FSC public dashboard …")
-    records, seen = [], set()
-    restart = prev_restart = None
+    records = []
+    restart = None
+    prev_last = None            # last row of the previous page (repeated as this page's first)
+    seen_tokens = set()
     page = 0
-    while True:
+    while page < MAX_PAGES:
         page += 1
         body = copy.deepcopy(QUERY_BODY)
         window = body["queries"][0]["Query"]["Commands"][0][
@@ -151,25 +164,26 @@ def main():
 
         ds = post_query(session, body)
         rows, restart = decode_window(ds)
-
-        new = 0
-        for row in rows:
-            rec = to_record(row)
-            key = tuple(rec[k] for k in FIELDNAMES)   # per-site rows: dedupe whole row
-            if key in seen:              # restart tokens overlap by one row
-                continue
-            seen.add(key)
-            records.append(rec)
-            new += 1
-        print(f"  Page {page}: {len(rows)} rows ({new} new) — total {len(records)}",
-              end="\r", flush=True)
-
-        # Stop at the genuine end: a short window, no restart token, or the token
-        # stopped advancing (guards against an overlap loop).
-        if len(rows) < WINDOW or restart is None or restart == prev_restart:
+        if not rows:
             break
-        prev_restart = restart
+        page_recs = [to_record(r) for r in rows]
+
+        # Continuation windows repeat the previous window's last row as their first
+        # row — drop just that boundary row, never real duplicate site rows.
+        start = 1 if (prev_last is not None and row_key(page_recs[0]) == prev_last) else 0
+        records.extend(page_recs[start:])
+        prev_last = row_key(page_recs[-1])
+        print(f"  Page {page}: {len(rows)} rows — total {len(records)}", end="\r", flush=True)
+
+        if len(rows) < WINDOW or restart is None:
+            break
+        token = json.dumps(restart, sort_keys=True)
+        if token in seen_tokens:        # token repeated/oscillating -> stop (no progress)
+            break
+        seen_tokens.add(token)
         time.sleep(REQUEST_DELAY)
+    else:
+        print(f"\nWARNING: hit page cap {MAX_PAGES}", file=sys.stderr)
 
     print(f"\nParsed {len(records)} valid certificates.")
 
