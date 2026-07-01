@@ -1,0 +1,44 @@
+name: Monthly PEFC Certificate Scraper
+
+on:
+  schedule:
+    - cron: '0 8 1 * *'   # 08:00 UTC on the 1st of every month (after ISCC & SURE)
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240     # ~50k records via headless Chromium; may take a few union passes
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet -r requirements-pefc.txt
+
+      - name: Install Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run scraper
+        run: python scraper_pefc.py
+
+      - name: Generate Excel dashboard
+        run: python generate_excel_pefc.py
+
+      - name: Commit and push Excel files
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rm -f --ignore-unmatch "PEFC certificates"*.csv
+          git add "PEFC certificates"*.xlsx
+          git diff --cached --quiet && echo "No changes to commit." && exit 0
+          git commit -m "chore: monthly PEFC certificate scrape $(date -u +%Y-%m-%d)"
+          git push
