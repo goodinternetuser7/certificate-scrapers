@@ -7,6 +7,7 @@ __pycache__/
 ISCC certificates*.csv
 SURE certificates*.csv
 PEFC certificates*.csv
+FSC certificates*.csv
 
 # Debug scratch
 _pefc_*.html

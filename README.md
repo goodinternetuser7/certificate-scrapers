@@ -9,6 +9,7 @@ this repo via GitHub Actions.
 | **ISCC** | [iscc-system.org](https://iscc-system.org/certification/all-certificates/) | `scraper.py` | `generate_excel.py` | `monthly-scrape.yml` (06:00) |
 | **SURE** | [certification.sure-system.org](https://certification.sure-system.org/SearchVerifications) | `scraper_sure.py` | `generate_excel_sure.py` | `monthly-scrape-sure.yml` (07:00) |
 | **PEFC** | [pefc.org/find-certified-legacy](https://pefc.org/find-certified-legacy) | `scraper_pefc.py` | `generate_excel_pefc.py` | `monthly-scrape-pefc.yml` (08:00) |
+| **FSC** | [FSC Certificates Public Dashboard](https://app.powerbi.com/view?r=eyJrIjoiN2U3NGMyNWEtZTAxNS00MzVhLWExNmMtOThhZjdiYjQ4MWNkIiwidCI6IjEyNGU2OWRiLWVmNjUtNDk2Yi05NmE5LTVkNTZiZWMxZDI5MSIsImMiOjl9) (Power BI) | `scraper_fsc.py` | `generate_excel_fsc.py` | `monthly-scrape-fsc.yml` (09:00) |
 
 Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 `<Scheme> certificates YYYY.MM.DD.xlsx` archive. You can also trigger any scraper
@@ -63,3 +64,29 @@ python generate_excel_pefc.py
 
 Handy env vars for local runs: `PEFC_MAX_PAGES=3` (limit pages),
 `PEFC_PAGE_SIZE=250`, `PEFC_HEADFUL=1` (visible browser).
+
+## FSC
+
+FSC's data is a **Power BI "publish to web"** report — no HTML to scrape — but the
+published report exposes its data through Power BI's public `querydata` API.
+`scraper_fsc.py` replays the exact semantic query behind the report's detail-table
+visual and pages through it with Power BI restart tokens, so it's a **plain HTTP
+scraper (no browser)**. Rows are per certificate *site*; columns:
+
+| Column | Description |
+|---|---|
+| Licence Code | FSC licence code (e.g. FSC-C103661) |
+| Certificate Code | Full certificate code (e.g. INT-COC-001586) |
+| Certificate Type | Derived from the code (COC / FM / CW / FM/COC / …) |
+| Status | Certificate status (Valid) |
+| Controlled Wood | Yes / No |
+| Valid From / Valid To | Certificate validity dates |
+| Organization | Certificate / site holder |
+| Role | Certificate holder or Site |
+| Site Status, State/Province, Country | Site details |
+
+```bash
+pip install -r requirements.txt
+python scraper_fsc.py
+python generate_excel_fsc.py
+```
