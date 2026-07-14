@@ -1,0 +1,39 @@
+name: Monthly Combined Workbook
+
+on:
+  schedule:
+    # 11:00 UTC on the 8th — after every scraper has committed its dashboard
+    # (ISCC/SURE/PEFC/FSC/SBP on the 1st, GGL on the 8th at 10:00).
+    - cron: '0 11 8 * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet openpyxl
+
+      - name: Build combined workbook
+        run: python build_combined.py
+
+      - name: Commit and push combined workbook
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "All certificates latest.xlsx"
+          git diff --cached --quiet && echo "No changes to commit." && exit 0
+          git commit -m "chore: rebuild combined workbook $(date -u +%Y-%m-%d)"
+          git push

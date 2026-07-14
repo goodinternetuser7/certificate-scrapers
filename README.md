@@ -17,6 +17,22 @@ Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 `<Scheme> certificates YYYY.MM.DD.xlsx` archive. You can also trigger any scraper
 manually from the **Actions** tab → *Run workflow*.
 
+## Combined workbook
+
+`build_combined.py` merges every scheme's data into one workbook, `All
+certificates latest.xlsx`, rebuilt monthly by `monthly-build-combined.yml` (on
+the 8th, after all scrapes). It has:
+
+- **All Certificates** — one normalised, filterable row per certificate across
+  all schemes (`Scheme, Identifier, Name, Country, Type, Certification Body,
+  Status, Valid From, Valid To`), with dates converted to real Excel dates so
+  the whole ~200k-row set sorts and filters together.
+- **one sheet per scheme** — the full native columns, so no detail is lost.
+- **Summary** — record counts per scheme.
+
+Only the `latest` copy is committed (~26 MB); dated copies are generated locally
+but git-ignored to bound repo growth.
+
 ## Monthly email digest
 
 `monthly-email-digest.yml` runs on the 8th (after every scraper has committed its

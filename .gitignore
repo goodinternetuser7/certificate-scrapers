@@ -15,5 +15,8 @@ SBP certificates*.csv
 csv_export/
 certificate-csvs-*.zip
 
+# Combined workbook — only the latest is committed; dated copies stay local
+All certificates 20*.xlsx
+
 # Debug scratch
 _pefc_*.html
