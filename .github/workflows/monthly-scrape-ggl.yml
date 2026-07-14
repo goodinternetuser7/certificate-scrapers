@@ -1,0 +1,43 @@
+name: Monthly GGL Certificate Scraper
+
+on:
+  schedule:
+    # 10:00 UTC on the 8th — GGL publishes its holder-list PDF early each month
+    # (e.g. "6 July"), so we run a few days later to pick up the fresh list.
+    - cron: '0 10 8 * *'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet -r requirements-ggl.txt
+
+      - name: Run scraper
+        run: python scraper_ggl.py
+
+      - name: Generate Excel dashboard
+        run: python generate_excel_ggl.py
+
+      - name: Commit and push Excel files
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rm -f --ignore-unmatch "GGL certificates"*.csv
+          git add "GGL certificates"*.xlsx
+          git diff --cached --quiet && echo "No changes to commit." && exit 0
+          git commit -m "chore: monthly GGL certificate scrape $(date -u +%Y-%m-%d)"
+          git push
