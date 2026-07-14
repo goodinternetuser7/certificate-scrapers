@@ -10,10 +10,29 @@ this repo via GitHub Actions.
 | **SURE** | [certification.sure-system.org](https://certification.sure-system.org/SearchVerifications) | `scraper_sure.py` | `generate_excel_sure.py` | `monthly-scrape-sure.yml` (07:00) |
 | **PEFC** | [pefc.org/find-certified-legacy](https://pefc.org/find-certified-legacy) | `scraper_pefc.py` | `generate_excel_pefc.py` | `monthly-scrape-pefc.yml` (08:00) |
 | **FSC** | [FSC Certificates Public Dashboard](https://app.powerbi.com/view?r=eyJrIjoiN2U3NGMyNWEtZTAxNS00MzVhLWExNmMtOThhZjdiYjQ4MWNkIiwidCI6IjEyNGU2OWRiLWVmNjUtNDk2Yi05NmE5LTVkNTZiZWMxZDI5MSIsImMiOjl9) (Power BI) | `scraper_fsc.py` | `generate_excel_fsc.py` | `monthly-scrape-fsc.yml` (09:00) |
+| **GGL** | [greengoldlabel.com/certification](https://greengoldlabel.com/certification/) (PDF) | `scraper_ggl.py` | `generate_excel_ggl.py` | `monthly-scrape-ggl.yml` (10:00, 8th) |
+| **SBP** | [sbp-cert.org/certificate-holders](https://sbp-cert.org/certificate-holders/) | `scraper_sbp.py` | `generate_excel_sbp.py` | `monthly-scrape-sbp.yml` (11:00) |
 
 Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 `<Scheme> certificates YYYY.MM.DD.xlsx` archive. You can also trigger any scraper
 manually from the **Actions** tab → *Run workflow*.
+
+## Monthly email digest
+
+`monthly-email-digest.yml` runs on the 8th (after every scraper has committed its
+dashboard for the month) and emails all six registers as CSVs, zipped into one
+attachment (~6 MB), to `maris.zamovskis@bmcertification.com`. Rather than
+re-running the scrapers, `export_csvs.py` rebuilds each CSV from the committed
+`latest.xlsx` dashboard's `Data` sheet, so the digest is cheap and always matches
+the last committed scrape.
+
+Sending uses Gmail SMTP via [`dawidd6/action-send-mail`](https://github.com/dawidd6/action-send-mail).
+Configure two repository secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret | Value |
+|---|---|
+| `MAIL_USERNAME` | the Gmail address to send from |
+| `MAIL_PASSWORD` | a Google [App Password](https://myaccount.google.com/apppasswords) for that account (not the normal password) |
 
 ## ISCC & SURE
 
@@ -89,4 +108,67 @@ scraper (no browser)**. Rows are per certificate *site*; columns:
 pip install -r requirements.txt
 python scraper_fsc.py
 python generate_excel_fsc.py
+```
+
+## GGL
+
+Green Gold Label has no search API or HTML register — it publishes the full
+holder list as a **PDF** (exported from Excel) linked from its certification
+page. `scraper_ggl.py` finds the most recent *"GGL certificate holder list"* PDF
+linked on [greengoldlabel.com/certification](https://greengoldlabel.com/certification/),
+downloads it, and parses the table with **pdfplumber**. Long cells (participant
+name, role, CB) wrap across lines; each real row is anchored by a numeric USI in
+the left column, so the parser bins every word to a column by x-position and
+merges wrapped continuation lines back into their anchor row. Columns:
+
+| Column | Description |
+|---|---|
+| USI | GGL unique system identifier |
+| Participant name | Certificate holder |
+| Country | Country |
+| Participant role | e.g. *Trader*, *First collector*, *Power company* |
+| Regulation | e.g. *FIT/FIP* |
+| Standards | e.g. *GGLS1, GGLS4* |
+| Type of biomass | e.g. *AR*, *WB*, *Cat 5* |
+| Valid from / Valid till | Certificate validity dates |
+| CB | Certification body |
+| Status | *Valid*, *Suspended*, *Withdrawn*, *Terminated*, *Expired* |
+
+> **Note:** unlike the other registers this list includes *all* statuses, not
+> just valid ones, so the Status column is kept rather than pre-filtered.
+
+```bash
+pip install -r requirements-ggl.txt
+python scraper_ggl.py
+python generate_excel_ggl.py
+```
+
+## SBP
+
+The Sustainable Biomass Program register is a WordPress *Search & Filter Pro*
+directory — each holder is a server-rendered, expandable panel, 12 per page,
+paginated with `?sf_paged=N`. `scraper_sbp.py` is a plain-HTTP scraper: it reads
+the last page number from the first page's pagination, walks every page, and
+parses each panel's detail block (a clean label/value list) plus the holder name
+and country flag from the header. Columns:
+
+| Column | Description |
+|---|---|
+| Certificate Number | SBP certificate code (e.g. SBP-14-06) |
+| Certificate Holder | Organisation name |
+| Country | Country (from the header flag) |
+| Certificate Type | e.g. *Trader*, *Biomass Producer* |
+| Status | *Active*, *Suspended*, *Terminated* |
+| Certification Body | Issuing CB |
+| Date of Issue / Date of Expiry | Certificate validity dates |
+| Certificate Scope | e.g. *Includes EU RED; Includes Supply Base Evaluation* |
+| Products Covered | e.g. *Wood pellets; Wood chips; …* |
+
+> **Note:** the register lists all statuses, not just active ones, so the Status
+> column is kept rather than pre-filtered.
+
+```bash
+pip install -r requirements.txt
+python scraper_sbp.py
+python generate_excel_sbp.py
 ```
