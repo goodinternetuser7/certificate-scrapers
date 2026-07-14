@@ -1,0 +1,63 @@
+name: Email Combined Workbook
+
+# On-demand only: the full combined workbook (~26 MB) is too big for Gmail, so
+# this emails a slim copy containing just the normalised "All Certificates"
+# sheet (~10 MB). The full file with per-scheme detail lives in the repo.
+on:
+  workflow_dispatch:
+
+jobs:
+  email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet openpyxl
+
+      - name: Build slim combined workbook
+        run: |
+          python - <<'PY'
+          from openpyxl import load_workbook
+          wb = load_workbook("All certificates latest.xlsx")
+          for sn in list(wb.sheetnames):
+              if sn != "All Certificates":
+                  del wb[sn]
+          wb.save("All Certificates (combined) latest.xlsx")
+          PY
+          zip -9 "combined-workbook.zip" "All Certificates (combined) latest.xlsx"
+
+      - name: Date stamp
+        run: echo "DATE=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+      - name: Send email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "Combined certificate workbook — ${{ env.DATE }}"
+          to: maris.zamovskis@bmcertification.com
+          from: Certificate Scrapers <${{ secrets.MAIL_USERNAME }}>
+          attachments: combined-workbook.zip
+          body: |
+            Attached (zipped): the combined certificate workbook — one normalised,
+            filterable "All Certificates" sheet across ISCC, SURE, PEFC, FSC, GGL
+            and SBP (~196k rows), with dates as real Excel dates so it all sorts
+            together.
+
+            This is the slim copy (that sheet only) so it fits email. The full
+            workbook, with a detail sheet per scheme, is in the repo:
+            https://github.com/goodinternetuser7/certificate-scrapers/blob/master/All%20certificates%20latest.xlsx
+
+            Automated message — do not reply.
