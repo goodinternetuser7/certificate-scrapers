@@ -109,7 +109,7 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
                 data_fieldnames=("Client Name", "Scope", "Issuing CB", "Expiry Date", "Country"),
                 data_widths=(50, 25, 45, 15, 20),
                 kpi_total_label="Total Active Certificates",
-                default_prefix="ISCC certificates"):
+                default_prefix="ISCC certificates", save=True):
     data_fieldnames = list(data_fieldnames)
     data_widths = list(data_widths)
     wb = Workbook()
@@ -335,9 +335,11 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
         dated_out = f"{default_prefix} {date_part}.xlsx"
     if latest_out is None:
         latest_out = f"{default_prefix} latest.xlsx"
-    for path in (dated_out, latest_out):
-        wb.save(path)
-        print(f"Saved → {path}")
+    if save:
+        for path in (dated_out, latest_out):
+            wb.save(path)
+            print(f"Saved → {path}")
+    return wb
 
 
 def main():

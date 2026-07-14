@@ -1,37 +1,47 @@
 #!/usr/bin/env python3
 """
-Builds a single workbook combining every scheme's data from the committed
-`<Scheme> certificates latest.xlsx` dashboards:
+Builds a single combined workbook from every scheme's committed
+`<Scheme> certificates latest.xlsx` dashboard.
 
-  • "All Certificates" — one normalised, filterable row per certificate across
-    all schemes (Scheme, Identifier, Name, Country, Type, Certification Body,
-    Status, Valid From, Valid To), with dates normalised to real Excel dates so
-    the whole set sorts/filters together.
-  • one sheet per scheme — the full native columns, as a filterable table, so no
-    detail (products, licence numbers, city, …) is lost.
-  • "Summary" — row counts per scheme.
+Two files are produced (both in one openpyxl session, so the dashboard charts are
+never lost to a reload):
 
-Output: "All certificates latest.xlsx" (+ a dated copy).
+  • "All certificates latest.xlsx" — the full workbook:
+      - Dashboard    interactive front page (Select Country → pie of certificates
+                     by scheme; Select Scheme → bar of top countries), same design
+                     as the per-scheme dashboards but driven by the combined set.
+      - Data         one normalised, filterable row per certificate across all
+                     schemes (Scheme, Identifier, Name, Country, Type,
+                     Certification Body, Status, Valid From, Valid To).
+      - ISCC … SBP   full native columns per scheme, so no detail is lost.
+      - Summary      record counts per scheme.
+  • "All certificates (dashboard) latest.xlsx" — the same but without the six
+    per-scheme detail sheets, so it's small enough (~10 MB) to email.
+
+The combined set's second dashboard dimension is Scheme (Certification Body is
+absent for FSC/PEFC, so it makes a poor cross-scheme split).
 """
 
+import csv
 import glob
+import os
 import sys
 from datetime import date, datetime, timezone
 
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
+from generate_excel import aggregate, build_excel, hdr
+
 SCHEMES = ["ISCC", "SURE", "PEFC", "FSC", "GGL", "SBP"]
+BLUE, WHITE = "005798", "FFFFFF"
 
-BLUE = "005798"
-WHITE = "FFFFFF"
-
-# Common (normalised) schema, and how each scheme's source columns map onto it.
-# A tuple value means "first non-empty of these source columns".
 COMMON = ["Scheme", "Identifier", "Name", "Country", "Type",
           "Certification Body", "Status", "Valid From", "Valid To"]
+COMMON_WIDTHS = (10, 20, 42, 18, 26, 26, 12, 13, 13)
+COUNTRY_I, SCHEME_I = COMMON.index("Country"), COMMON.index("Scheme")
 DATE_COLS = {"Valid From", "Valid To"}
 MAPPINGS = {
     "ISCC": {"Name": "Client Name", "Country": "Country", "Type": "Scope",
@@ -53,35 +63,35 @@ MAPPINGS = {
 }
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d %B %Y", "%d %b %Y")
 
+FULL_OUT = "All certificates latest.xlsx"
+SLIM_OUT = "All certificates (dashboard) latest.xlsx"
+COMBINED_CSV = "All certificates latest.csv"    # transient, feeds the Data sheet
 
-def norm_date(v):
-    """Parse a scheme's date string into a real date for uniform sorting; keep
-    the raw value if it doesn't match any known format."""
+
+def iso_date(v):
+    """Normalise a scheme's date to an ISO 'YYYY-MM-DD' string (sorts uniformly);
+    keep the raw value if it matches no known format."""
     if not v:
         return ""
     if isinstance(v, (datetime, date)):
-        return v if not isinstance(v, datetime) else v.date()
+        return (v.date() if isinstance(v, datetime) else v).isoformat()
     s = str(v).strip()
     for fmt in DATE_FORMATS:
         try:
-            return datetime.strptime(s, fmt).date()
+            return datetime.strptime(s, fmt).date().isoformat()
         except ValueError:
             continue
     return s
 
 
 def read_data(scheme):
-    """Return (headers, rows) from a scheme's dashboard Data sheet."""
     wb = load_workbook(f"{scheme} certificates latest.xlsx", read_only=True, data_only=True)
     try:
         ws = wb["Data"]
         it = ws.iter_rows(values_only=True)
         headers = list(next(it))
-        rows = []
-        for r in it:
-            if r is None or all(c is None or c == "" for c in r):
-                continue
-            rows.append(["" if c is None else c for c in r])
+        rows = [["" if c is None else c for c in r]
+                for r in it if r and not all(c is None or c == "" for c in r)]
         return headers, rows
     finally:
         wb.close()
@@ -89,50 +99,41 @@ def read_data(scheme):
 
 def pick(row_map, source):
     if isinstance(source, tuple):
-        for col in source:
-            if row_map.get(col):
-                return row_map[col]
-        return ""
+        return next((row_map[c] for c in source if row_map.get(c)), "")
     return row_map.get(source, "")
 
 
-def style_header(ws, ncols):
-    for c in range(1, ncols + 1):
-        cell = ws.cell(row=1, column=c)
-        cell.font = Font(color=WHITE, bold=True, name="Calibri", size=11)
-        cell.fill = PatternFill("solid", fgColor=BLUE)
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-
-def add_table(ws, name, ncols, nrows):
-    ref = f"A1:{get_column_letter(ncols)}{nrows + 1}"
-    tab = Table(displayName=name, ref=ref)
+def add_detail_sheet(wb, scheme, headers, rows):
+    ws = wb.create_sheet(scheme)
+    ws.append(headers)
+    for row in rows:
+        ws.append(row)
+    for c in range(1, len(headers) + 1):
+        hdr(ws.cell(row=1, column=c))
+    for ci, h in enumerate(headers, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = min(max(len(str(h)) + 2, 12), 48)
+    ref = f"A1:{get_column_letter(len(headers))}{len(rows) + 1}"
+    tab = Table(displayName=f"{scheme}Data", ref=ref)
     tab.tableStyleInfo = TableStyleInfo(name="TableStyleMedium9", showRowStripes=True)
     ws.add_table(tab)
     ws.freeze_panes = "A2"
 
 
-def write_sheet(wb, title, headers, rows, table_name, date_cols=()):
-    ws = wb.create_sheet(title)
-    ws.append(headers)
-    date_idx = [i for i, h in enumerate(headers) if h in date_cols]
-    for row in rows:
-        ws.append(row)
-    style_header(ws, len(headers))
-    # Apply date number format to normalised date columns
-    for ci in date_idx:
-        col = get_column_letter(ci + 1)
-        for r in range(2, len(rows) + 2):
-            ws[f"{col}{r}"].number_format = "yyyy-mm-dd"
-    for ci, h in enumerate(headers, 1):
-        ws.column_dimensions[get_column_letter(ci)].width = min(max(len(str(h)) + 2, 12), 48)
-    add_table(ws, table_name, len(headers), len(rows))
-    return ws
+def add_summary_sheet(wb, per_scheme, total):
+    ws = wb.create_sheet("Summary")
+    ws.append(["Scheme", "Records"])
+    for c in (1, 2):
+        hdr(ws.cell(row=1, column=c))
+    for scheme in SCHEMES:
+        if scheme in per_scheme:
+            ws.append([scheme, len(per_scheme[scheme][1])])
+    ws.append(["TOTAL", total])
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 12
 
 
 def main():
-    combined = []
-    per_scheme = {}
+    combined, per_scheme = [], {}
     for scheme in SCHEMES:
         if not glob.glob(f"{scheme} certificates latest.xlsx"):
             print(f"  skip {scheme}: dashboard not found")
@@ -147,7 +148,7 @@ def main():
                 if col not in m:
                     rec.append("")
                 elif col in DATE_COLS:
-                    rec.append(norm_date(pick(row_map, m[col])))
+                    rec.append(iso_date(pick(row_map, m[col])))
                 else:
                     rec.append(pick(row_map, m[col]))
             combined.append(rec)
@@ -156,31 +157,39 @@ def main():
     if not combined:
         sys.exit("No dashboards found — did the scrapers run?")
 
-    wb = Workbook()
-    wb.remove(wb.active)
+    # Feed the Data sheet + dashboard aggregation. dim2 ('cb' slot) = Scheme.
+    with open(COMBINED_CSV, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(COMMON)
+        w.writerows(combined)
+    dash_rows = [{"country": r[COUNTRY_I] or "Unknown", "cb": r[SCHEME_I]} for r in combined]
+    country_totals, cb_totals, cb_by_country, country_by_cb = aggregate(dash_rows)
+    print(f"Building dashboard: {len(combined)} rows, {len(country_totals)} countries …")
 
-    print(f"Writing All Certificates ({len(combined)} rows) …")
-    write_sheet(wb, "All Certificates", COMMON, combined, "AllCertificates", DATE_COLS)
+    wb = build_excel(
+        dash_rows, country_totals, cb_totals, cb_by_country, country_by_cb, COMBINED_CSV,
+        title="All Certificates — Interactive Dashboard",
+        dim2_singular="Scheme", dim2_short="Scheme",
+        data_fieldnames=COMMON, data_widths=COMMON_WIDTHS,
+        kpi_total_label="Total Certificate Records",
+        default_prefix="All certificates", save=False,
+    )
+    add_summary_sheet(wb, per_scheme, len(combined))
 
+    # Slim (dashboard + data only) first — small enough to email.
+    wb.save(SLIM_OUT)
+    print(f"Saved → {SLIM_OUT}")
+
+    # Then add per-scheme detail and save the full workbook (+ dated copy).
     for scheme in SCHEMES:
         if scheme in per_scheme:
-            headers, rows = per_scheme[scheme]
-            write_sheet(wb, scheme, headers, rows, f"{scheme}Data")
-
-    ws = wb.create_sheet("Summary")
-    ws.append(["Scheme", "Records"])
-    style_header(ws, 2)
-    for scheme in SCHEMES:
-        if scheme in per_scheme:
-            ws.append([scheme, len(per_scheme[scheme][1])])
-    ws.append(["TOTAL", len(combined)])
-    ws.column_dimensions["A"].width = 14
-    ws.column_dimensions["B"].width = 12
-
+            add_detail_sheet(wb, scheme, *per_scheme[scheme])
     date_str = datetime.now(timezone.utc).strftime("%Y.%m.%d")
-    for path in (f"All certificates {date_str}.xlsx", "All certificates latest.xlsx"):
+    for path in (f"All certificates {date_str}.xlsx", FULL_OUT):
         wb.save(path)
         print(f"Saved → {path}")
+
+    os.remove(COMBINED_CSV)
 
 
 if __name__ == "__main__":
