@@ -1,35 +1,21 @@
 name: Email Combined Workbook
 
-# On-demand only. The full combined workbook (~26 MB) is too big for Gmail, so
-# this emails the slim dashboard copy build_combined.py produces — the
-# interactive Dashboard + normalised Data sheet, ~10 MB. The full workbook (with
-# a detail sheet per scheme) lives in the repo for download.
+# On-demand only. Sends a LINK-only email (no attachment). An earlier version
+# attached the ~10 MB zip, but a Gmail sender → Microsoft 365 recipient with a
+# zip attachment gets quarantined by Defender/EOP on the receiving side (the
+# SMTP send still reports success, so the mail silently never arrives). The repo
+# is public, so a plain link downloads without any GitHub login and a tiny
+# text-only email sails through filtering. The workbook itself is kept fresh on
+# master by the "Monthly Combined Workbook" job (and its manual dispatch).
 on:
   workflow_dispatch:
 
 jobs:
   email:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install --quiet openpyxl
-
-      - name: Build combined workbook
-        run: python build_combined.py
-
-      - name: Zip slim dashboard workbook
-        run: zip -9 "combined-workbook.zip" "All certificates (dashboard) latest.xlsx"
-
       - name: Date stamp
         run: echo "DATE=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
 
@@ -44,15 +30,16 @@ jobs:
           subject: "Combined certificate workbook — ${{ env.DATE }}"
           to: maris.zamovskis@bmcertification.com
           from: Certificate Scrapers <${{ secrets.MAIL_USERNAME }}>
-          attachments: combined-workbook.zip
           body: |
-            Attached (zipped): the combined certificate workbook — an interactive
-            Dashboard (Select Country → certificates by scheme; Select Scheme →
-            top countries) over one normalised Data sheet spanning ISCC, SURE,
-            PEFC, FSC, GGL and SBP (~196k rows).
+            The latest combined certificate workbook is ready to download:
 
-            This is the slim copy (dashboard + data) so it fits email. The full
-            workbook, with a detail sheet per scheme, is in the repo:
-            https://github.com/goodinternetuser7/certificate-scrapers/blob/master/All%20certificates%20latest.xlsx
+            https://github.com/goodinternetuser7/certificate-scrapers/raw/master/All%20certificates%20latest.xlsx
+
+            It's a single normalised "All Certificates" sheet plus a detail sheet
+            per scheme, spanning ISCC, SURE, PEFC, FSC, GGL and SBP (~196k rows),
+            with dates as real Excel dates so everything sorts together.
+
+            The link downloads the file directly (the repo is public — no login
+            needed). It's refreshed on the 8th of each month.
 
             Automated message — do not reply.
