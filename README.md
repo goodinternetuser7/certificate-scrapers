@@ -12,6 +12,7 @@ this repo via GitHub Actions.
 | **FSC** | [FSC Certificates Public Dashboard](https://app.powerbi.com/view?r=eyJrIjoiN2U3NGMyNWEtZTAxNS00MzVhLWExNmMtOThhZjdiYjQ4MWNkIiwidCI6IjEyNGU2OWRiLWVmNjUtNDk2Yi05NmE5LTVkNTZiZWMxZDI5MSIsImMiOjl9) (Power BI) | `scraper_fsc.py` | `generate_excel_fsc.py` | `monthly-scrape-fsc.yml` (09:00) |
 | **GGL** | [greengoldlabel.com/certification](https://greengoldlabel.com/certification/) (PDF) | `scraper_ggl.py` | `generate_excel_ggl.py` | `monthly-scrape-ggl.yml` (10:00, 8th) |
 | **SBP** | [sbp-cert.org/certificate-holders](https://sbp-cert.org/certificate-holders/) | `scraper_sbp.py` | `generate_excel_sbp.py` | `monthly-scrape-sbp.yml` (11:00) |
+| **GLOBALG.A.P** | [Supply Chain Portal](https://prod.osapiens.cloud/portal/webbundle/foodplus/field-service-os/supply-chain-portal) (osapiens) | `scraper_ggap.py` | `generate_excel_ggap.py` | `monthly-scrape-ggap.yml` (10:00) |
 
 Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 `<Scheme> certificates YYYY.MM.DD.xlsx` archive. You can also trigger any scraper
@@ -19,19 +20,31 @@ manually from the **Actions** tab → *Run workflow*.
 
 ## Combined workbook
 
-`build_combined.py` merges every scheme's data into one workbook, `All
-certificates latest.xlsx`, rebuilt monthly by `monthly-build-combined.yml` (on
-the 8th, after all scrapes). It has:
+`build_combined.py` merges the six **certificate** schemes above (GLOBALG.A.P is a
+producer register with a different shape, so it stays separate) into one workbook,
+`All certificates latest.xlsx`, rebuilt monthly by `monthly-build-combined.yml`
+(on the 8th, after all scrapes). It has:
 
+- **Dashboard** — an interactive front page: *Select Country* → certificates by
+  scheme, *Select Scheme* → top countries, plus a **Top Certification Bodies**
+  chart.
 - **All Certificates** — one normalised, filterable row per certificate across
   all schemes (`Scheme, Identifier, Name, Country, Type, Certification Body,
   Status, Valid From, Valid To`), with dates converted to real Excel dates so
   the whole ~200k-row set sorts and filters together.
+- **Certification Bodies** — each CB, its record count, and which schemes report
+  it (ISCC, SURE, GGL, SBP publish a CB; PEFC and FSC do not).
 - **one sheet per scheme** — the full native columns, so no detail is lost.
 - **Summary** — record counts per scheme.
 
-Only the `latest` copy is committed (~26 MB); dated copies are generated locally
-but git-ignored to bound repo growth.
+The `latest` copy plus the newest dated `All certificates YYYY.MM.DD.xlsx` are
+committed (each ~26 MB); the monthly rebuild prunes the previous dated copy so
+only one is kept.
+
+`email-combined.yml` is an on-demand workflow (**Actions → Run workflow**) that
+emails a **link** to the latest dated workbook (not an attachment — a Gmail-sent
+attachment to a Microsoft 365 inbox gets quarantined; a plain link to the public
+repo does not). It reuses the same `MAIL_USERNAME` / `MAIL_PASSWORD` secrets below.
 
 ## Monthly email digest
 
@@ -188,3 +201,45 @@ pip install -r requirements.txt
 python scraper_sbp.py
 python generate_excel_sbp.py
 ```
+
+## GLOBALG.A.P
+
+Unlike the other registers, GLOBALG.A.P lists **producers** (not certificates),
+via the **Supply Chain Portal** (FoodPLUS, on the osapiens platform). The portal
+is a GWT single-page app whose data comes over a proprietary *binary* RPC — there
+is no usable HTTP/JSON API — so `scraper_ggap.py` drives headless Chromium via
+**Playwright**, like PEFC.
+
+The portal's *Product* search **requires both a product and a country** (a
+product-only search errors *"Please input Country"*), so the only way to
+enumerate is to walk the grid of products × countries. The scraper therefore
+scans a **configured set of countries** (default **Latvia, Estonia, Lithuania**)
+across **all ~727 product options** (the full crop list, kept in
+`ggap_products.json`) and collects the producer rows for each, de-duplicated by
+`GGN + Country + Product`. A producer certified for several crops appears once
+per crop. Columns:
+
+| Column | Description |
+|---|---|
+| GGN | GLOBALG.A.P Number (the producer's unique 13-digit id) |
+| Producer Name | Producer / producer-group name |
+| City | City / locality |
+| Country | Country (the searched country) |
+| Producer Type | *Producer* or *Producer group* |
+| Product | The crop the producer is certified for |
+
+> **Note:** the public search exposes producer identity, not per-certificate
+> detail (issuing CB, validity dates live on each producer's detail page), so
+> those columns are omitted. The dashboard's second dimension is **Product**.
+
+```bash
+pip install -r requirements-ggap.txt
+python -m playwright install chromium
+python scraper_ggap.py
+python generate_excel_ggap.py
+```
+
+Env vars: `GGAP_COUNTRIES="Latvia,Estonia,Lithuania"` (the scope),
+`GGAP_PRODUCTS="Apple,Tomato"` (scan specific products instead of the full list),
+`GGAP_MAX_PRODUCTS=20` (cap for quick tests), `GGAP_HEADFUL=1` (visible browser),
+`GGAP_ENUM=1` (re-enumerate the product list into `ggap_products.json` and exit).
