@@ -22,9 +22,11 @@ never lost to a reload):
   • "All certificates (dashboard) latest.xlsx" — the same but without the six
     per-scheme detail sheets, so it's small enough (~10 MB) to email.
 
-The combined set's second dashboard dimension is Scheme (Certification Body is
-absent for FSC/PEFC — 89% of rows — so it makes a poor cross-scheme chart split;
-the "Certification Bodies" sheet gives the CB breakdown instead).
+The combined set's second dashboard *selector* dimension is Scheme (Certification
+Body is absent for FSC/PEFC — 89% of rows — so an interactive per-country CB
+split would be mostly empty). The Dashboard still surfaces CBs via a static
+"Top Certification Bodies" table + bar, and the "Certification Bodies" sheet has
+the full breakdown.
 """
 
 import csv
@@ -34,6 +36,8 @@ import sys
 from datetime import date, datetime, timezone
 
 from openpyxl import load_workbook
+from openpyxl.chart import BarChart, Reference
+from openpyxl.chart.data_source import AxDataSource, StrRef
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -41,7 +45,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from generate_excel import aggregate, build_excel, hdr
 
 SCHEMES = ["ISCC", "SURE", "PEFC", "FSC", "GGL", "SBP"]
-BLUE, WHITE = "005798", "FFFFFF"
+BLUE, WHITE, STRIPE = "005798", "FFFFFF", "EBF3FB"
 
 COMMON = ["Scheme", "Identifier", "Name", "Country", "Type",
           "Certification Body", "Status", "Valid From", "Valid To"]
@@ -176,6 +180,63 @@ def add_cb_summary_sheet(wb, combined):
     return len(ordered)
 
 
+def add_cb_to_dashboard(wb, combined, top_n=15):
+    """Surface certification bodies on the Dashboard front page: a ranked table
+    + horizontal bar of the top-N CBs by record count. Static (not tied to the
+    Country/Scheme selectors) because ~89% of rows carry no CB, which would make
+    an interactive per-country CB split mostly empty. Placed below the existing
+    pie/bar charts so it doesn't overlap them."""
+    from collections import defaultdict
+    counts = defaultdict(int)
+    for r in combined:
+        cb = r[CB_I]
+        cb = cb.strip() if isinstance(cb, str) else cb
+        if cb:
+            counts[cb] += 1
+    top = sorted(counts.items(), key=lambda x: (-x[1], x[0].lower()))[:top_n]
+    if not top:
+        return
+
+    ws = wb["Dashboard"]
+    base = 50  # the pie (B19) and bar (E19) are 14 cm tall (~row 47); clear them
+
+    ws.merge_cells(start_row=base, start_column=2, end_row=base, end_column=3)
+    title = ws.cell(row=base, column=2)
+    title.value = "Top Certification Bodies (ISCC · SURE · GGL · SBP publish a CB)"
+    title.font = Font(bold=True, size=12, color=WHITE, name="Calibri")
+    title.fill = PatternFill("solid", fgColor=BLUE)
+    title.alignment = Alignment(horizontal="center", vertical="center")
+
+    hr = base + 1
+    hdr(ws.cell(row=hr, column=2)); ws.cell(row=hr, column=2).value = "Certification Body"
+    hdr(ws.cell(row=hr, column=3)); ws.cell(row=hr, column=3).value = "Records"
+    for i, (cb, cnt) in enumerate(top):
+        rr = hr + 1 + i
+        ws.cell(row=rr, column=2).value = cb
+        ws.cell(row=rr, column=3).value = cnt
+        bg = STRIPE if i % 2 == 0 else WHITE
+        for c in (2, 3):
+            ws.cell(row=rr, column=c).fill = PatternFill("solid", fgColor=bg)
+            ws.cell(row=rr, column=c).font = Font(name="Calibri", size=10)
+
+    first, last = hr + 1, hr + len(top)
+    bar = BarChart()
+    bar.type = "bar"            # horizontal, so the long CB names read on the axis
+    bar.grouping = "clustered"
+    bar.title = f"Top {len(top)} Certification Bodies by records"
+    bar.style = 10
+    bar.width = 22
+    bar.height = 12
+    bar.legend = None
+    data = Reference(ws, min_col=3, min_row=hr, max_row=last)      # header for series title
+    cats = Reference(ws, min_col=2, min_row=first, max_row=last)
+    bar.add_data(data, titles_from_data=True)
+    bar.set_categories(cats)
+    for s in bar.series:
+        s.cat = AxDataSource(strRef=StrRef(f=f"'Dashboard'!$B${first}:$B${last}"))
+    ws.add_chart(bar, f"E{base}")
+
+
 def main():
     combined, per_scheme = [], {}
     for scheme in SCHEMES:
@@ -218,6 +279,7 @@ def main():
         kpi_total_label="Total Certificate Records",
         default_prefix="All certificates", save=False,
     )
+    add_cb_to_dashboard(wb, combined)
     n_cbs = add_cb_summary_sheet(wb, combined)
     add_summary_sheet(wb, per_scheme, len(combined))
     print(f"  Certification Bodies sheet: {n_cbs} bodies")
