@@ -1,0 +1,46 @@
+name: Monthly GLOBALG.A.P Certificate Scraper
+
+on:
+  schedule:
+    - cron: '0 10 1 * *'   # 10:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330     # ~2k product×country searches via headless Chromium
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet -r requirements-ggap.txt
+
+      - name: Install Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run scraper
+        env:
+          GGAP_COUNTRIES: Latvia,Estonia,Lithuania
+        run: python scraper_ggap.py
+
+      - name: Generate Excel dashboard
+        run: python generate_excel_ggap.py
+
+      - name: Commit and push Excel files
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rm -f --ignore-unmatch "GGAP certificates"*.csv
+          git add "GGAP certificates"*.xlsx
+          git diff --cached --quiet && echo "No changes to commit." && exit 0
+          git commit -m "chore: monthly GLOBALG.A.P certificate scrape $(date -u +%Y-%m-%d)"
+          git push
