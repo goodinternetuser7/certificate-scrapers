@@ -10,6 +10,7 @@ PEFC certificates*.csv
 FSC certificates*.csv
 GGL certificates*.csv
 SBP certificates*.csv
+GGAP certificates*.csv
 
 # Email-digest build artifacts
 csv_export/
