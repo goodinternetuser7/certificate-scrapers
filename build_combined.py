@@ -13,13 +13,18 @@ never lost to a reload):
       - Data         one normalised, filterable row per certificate across all
                      schemes (Scheme, Identifier, Name, Country, Type,
                      Certification Body, Status, Valid From, Valid To).
+      - Certification Bodies
+                     filterable table of each certification body → record count
+                     → which schemes report it (ISCC, SURE, GGL, SBP publish a
+                     CB; PEFC and FSC do not).
       - ISCC … SBP   full native columns per scheme, so no detail is lost.
       - Summary      record counts per scheme.
   • "All certificates (dashboard) latest.xlsx" — the same but without the six
     per-scheme detail sheets, so it's small enough (~10 MB) to email.
 
 The combined set's second dashboard dimension is Scheme (Certification Body is
-absent for FSC/PEFC, so it makes a poor cross-scheme split).
+absent for FSC/PEFC — 89% of rows — so it makes a poor cross-scheme chart split;
+the "Certification Bodies" sheet gives the CB breakdown instead).
 """
 
 import csv
@@ -42,6 +47,7 @@ COMMON = ["Scheme", "Identifier", "Name", "Country", "Type",
           "Certification Body", "Status", "Valid From", "Valid To"]
 COMMON_WIDTHS = (10, 20, 42, 18, 26, 26, 12, 13, 13)
 COUNTRY_I, SCHEME_I = COMMON.index("Country"), COMMON.index("Scheme")
+CB_I = COMMON.index("Certification Body")
 DATE_COLS = {"Valid From", "Valid To"}
 MAPPINGS = {
     "ISCC": {"Name": "Client Name", "Country": "Country", "Type": "Scope",
@@ -130,6 +136,44 @@ def add_summary_sheet(wb, per_scheme, total):
     ws.append(["TOTAL", total])
     ws.column_dimensions["A"].width = 14
     ws.column_dimensions["B"].width = 12
+    note_row = ws.max_row + 2
+    ws.cell(row=note_row, column=1).value = (
+        "Certification Body is published only by ISCC, SURE, GGL and SBP "
+        "(see the Certification Bodies sheet). PEFC and FSC do not publish it."
+    )
+    ws.cell(row=note_row, column=1).font = Font(italic=True, size=9, color="888888")
+
+
+def add_cb_summary_sheet(wb, combined):
+    """One row per certification body: record count + which schemes report it.
+    PEFC/FSC carry no CB, so those rows are simply excluded (blank CB)."""
+    from collections import defaultdict
+    counts = defaultdict(int)
+    schemes = defaultdict(set)
+    for r in combined:
+        cb = r[CB_I]
+        cb = cb.strip() if isinstance(cb, str) else cb
+        if not cb:
+            continue
+        counts[cb] += 1
+        schemes[cb].add(r[SCHEME_I])
+
+    ws = wb.create_sheet("Certification Bodies")
+    ws.append(["Certification Body", "Records", "Schemes"])
+    for c in (1, 2, 3):
+        hdr(ws.cell(row=1, column=c))
+    ordered = sorted(counts.items(), key=lambda x: (-x[1], x[0].lower()))
+    for cb, cnt in ordered:
+        ws.append([cb, cnt, ", ".join(sorted(schemes[cb]))])
+    ws.column_dimensions["A"].width = 46
+    ws.column_dimensions["B"].width = 12
+    ws.column_dimensions["C"].width = 24
+    ws.freeze_panes = "A2"
+    last = len(ordered) + 1
+    tab = Table(displayName="CertBodies", ref=f"A1:C{last}")
+    tab.tableStyleInfo = TableStyleInfo(name="TableStyleMedium9", showRowStripes=True)
+    ws.add_table(tab)
+    return len(ordered)
 
 
 def main():
@@ -174,7 +218,9 @@ def main():
         kpi_total_label="Total Certificate Records",
         default_prefix="All certificates", save=False,
     )
+    n_cbs = add_cb_summary_sheet(wb, combined)
     add_summary_sheet(wb, per_scheme, len(combined))
+    print(f"  Certification Bodies sheet: {n_cbs} bodies")
 
     # Slim (dashboard + data only) first — small enough to email.
     wb.save(SLIM_OUT)

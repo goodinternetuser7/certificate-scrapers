@@ -10,6 +10,9 @@ name: Email Combined Workbook
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   email:
     runs-on: ubuntu-latest
@@ -18,6 +21,22 @@ jobs:
     steps:
       - name: Date stamp
         run: echo "DATE=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+      - name: Resolve dated workbook link
+        id: link
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Pick the newest committed dated workbook so the downloaded file
+          # carries the date in its name. Fall back to the stable "latest".
+          name=$(curl -sf \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/contents?ref=master" \
+            | python3 -c "import sys,json; a=json.load(sys.stdin); f=sorted(x['name'] for x in a if x['name'].startswith('All certificates 20') and x['name'].endswith('.xlsx')); print(f[-1] if f else 'All certificates latest.xlsx')")
+          enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$name")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "url=https://github.com/${{ github.repository }}/raw/master/$enc" >> "$GITHUB_OUTPUT"
 
       - name: Send email
         uses: dawidd6/action-send-mail@v3
@@ -31,13 +50,17 @@ jobs:
           to: maris.zamovskis@bmcertification.com
           from: Certificate Scrapers <${{ secrets.MAIL_USERNAME }}>
           body: |
-            The latest combined certificate workbook is ready to download:
+            The latest combined certificate workbook is ready to download
+            (${{ steps.link.outputs.name }}):
 
-            https://github.com/goodinternetuser7/certificate-scrapers/raw/master/All%20certificates%20latest.xlsx
+            ${{ steps.link.outputs.url }}
 
             It's a single normalised "All Certificates" sheet plus a detail sheet
             per scheme, spanning ISCC, SURE, PEFC, FSC, GGL and SBP (~196k rows),
-            with dates as real Excel dates so everything sorts together.
+            with dates as real Excel dates so everything sorts together. A
+            "Certification Bodies" sheet lists each certification body and how
+            many records it holds (ISCC, SURE, GGL and SBP publish a CB; PEFC and
+            FSC do not).
 
             The link downloads the file directly (the repo is public — no login
             needed). It's refreshed on the 8th of each month.
