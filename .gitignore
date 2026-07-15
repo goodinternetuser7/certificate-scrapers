@@ -15,9 +15,10 @@ SBP certificates*.csv
 csv_export/
 certificate-csvs-*.zip
 
-# Combined workbook — only the full "latest" is committed; dated copies, the
-# slim dashboard-only copy, and the transient CSV stay local / CI-only
-All certificates 20*.xlsx
+# Combined workbook — the full "latest" plus the single newest dated copy are
+# committed (the email links to the dated file so the download carries a date;
+# monthly-build prunes the previous dated copy). The slim dashboard-only copy
+# and the transient CSV stay local / CI-only.
 All certificates (dashboard) latest.xlsx
 All certificates latest.csv
 
