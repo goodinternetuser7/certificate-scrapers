@@ -230,7 +230,9 @@ def main():
     for scheme in SCHEMES:
         if scheme in per_scheme:
             add_detail_sheet(wb, scheme, *per_scheme[scheme])
-    date_str = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    # CI sets COMBINED_DATE once and reuses it for the commit step, so the
+    # dated filename can't drift across a UTC-midnight boundary mid-run.
+    date_str = os.environ.get("COMBINED_DATE") or datetime.now(timezone.utc).strftime("%Y.%m.%d")
     for path in (f"All certificates {date_str}.xlsx", FULL_OUT):
         wb.save(path)
         print(f"Saved → {path}")

@@ -28,12 +28,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Pick the newest committed dated workbook so the downloaded file
-          # carries the date in its name. Fall back to the stable "latest".
-          name=$(curl -sf \
+          # carries the date in its name. Any API hiccup → stable "latest".
+          curl -s \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/contents?ref=master" \
-            | python3 -c "import sys,json; a=json.load(sys.stdin); f=sorted(x['name'] for x in a if x['name'].startswith('All certificates 20') and x['name'].endswith('.xlsx')); print(f[-1] if f else 'All certificates latest.xlsx')")
+            -o contents.json || true
+          name=$(python3 - <<'PY'
+          import json
+          try:
+              a = json.load(open("contents.json"))
+              f = sorted(x["name"] for x in a
+                         if isinstance(x, dict)
+                         and str(x.get("name", "")).startswith("All certificates 20")
+                         and str(x.get("name", "")).endswith(".xlsx"))
+          except Exception:
+              f = []
+          print(f[-1] if f else "All certificates latest.xlsx")
+          PY
+          )
           enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$name")
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "url=https://github.com/${{ github.repository }}/raw/master/$enc" >> "$GITHUB_OUTPUT"
