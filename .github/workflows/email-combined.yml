@@ -1,37 +1,55 @@
 name: Email Combined Workbook
 
-# On-demand only. The full combined workbook (~26 MB) is too big for Gmail, so
-# this emails the slim dashboard copy build_combined.py produces — the
-# interactive Dashboard + normalised Data sheet, ~10 MB. The full workbook (with
-# a detail sheet per scheme) lives in the repo for download.
+# On-demand only. Sends a LINK-only email (no attachment). An earlier version
+# attached the ~10 MB zip, but a Gmail sender → Microsoft 365 recipient with a
+# zip attachment gets quarantined by Defender/EOP on the receiving side (the
+# SMTP send still reports success, so the mail silently never arrives). The repo
+# is public, so a plain link downloads without any GitHub login and a tiny
+# text-only email sails through filtering. The workbook itself is kept fresh on
+# master by the "Monthly Combined Workbook" job (and its manual dispatch).
 on:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   email:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install --quiet openpyxl
-
-      - name: Build combined workbook
-        run: python build_combined.py
-
-      - name: Zip slim dashboard workbook
-        run: zip -9 "combined-workbook.zip" "All certificates (dashboard) latest.xlsx"
-
       - name: Date stamp
         run: echo "DATE=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+      - name: Resolve dated workbook link
+        id: link
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Pick the newest committed dated workbook so the downloaded file
+          # carries the date in its name. Any API hiccup → stable "latest".
+          curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/contents?ref=master" \
+            -o contents.json || true
+          name=$(python3 - <<'PY'
+          import json
+          try:
+              a = json.load(open("contents.json"))
+              f = sorted(x["name"] for x in a
+                         if isinstance(x, dict)
+                         and str(x.get("name", "")).startswith("All certificates 20")
+                         and str(x.get("name", "")).endswith(".xlsx"))
+          except Exception:
+              f = []
+          print(f[-1] if f else "All certificates latest.xlsx")
+          PY
+          )
+          enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$name")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "url=https://github.com/${{ github.repository }}/raw/master/$enc" >> "$GITHUB_OUTPUT"
 
       - name: Send email
         uses: dawidd6/action-send-mail@v3
@@ -44,15 +62,20 @@ jobs:
           subject: "Combined certificate workbook — ${{ env.DATE }}"
           to: maris.zamovskis@bmcertification.com
           from: Certificate Scrapers <${{ secrets.MAIL_USERNAME }}>
-          attachments: combined-workbook.zip
           body: |
-            Attached (zipped): the combined certificate workbook — an interactive
-            Dashboard (Select Country → certificates by scheme; Select Scheme →
-            top countries) over one normalised Data sheet spanning ISCC, SURE,
-            PEFC, FSC, GGL and SBP (~196k rows).
+            The latest combined certificate workbook is ready to download
+            (${{ steps.link.outputs.name }}):
 
-            This is the slim copy (dashboard + data) so it fits email. The full
-            workbook, with a detail sheet per scheme, is in the repo:
-            https://github.com/goodinternetuser7/certificate-scrapers/blob/master/All%20certificates%20latest.xlsx
+            ${{ steps.link.outputs.url }}
+
+            It's a single normalised "All Certificates" sheet plus a detail sheet
+            per scheme, spanning ISCC, SURE, PEFC, FSC, GGL and SBP (~196k rows),
+            with dates as real Excel dates so everything sorts together. A
+            "Certification Bodies" sheet lists each certification body and how
+            many records it holds (ISCC, SURE, GGL and SBP publish a CB; PEFC and
+            FSC do not).
+
+            The link downloads the file directly (the repo is public — no login
+            needed). It's refreshed on the 8th of each month.
 
             Automated message — do not reply.
