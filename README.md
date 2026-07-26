@@ -13,15 +13,18 @@ this repo via GitHub Actions.
 | **GGL** | [greengoldlabel.com/certification](https://greengoldlabel.com/certification/) (PDF) | `scraper_ggl.py` | `generate_excel_ggl.py` | `monthly-scrape-ggl.yml` (10:00, 8th) |
 | **SBP** | [sbp-cert.org/certificate-holders](https://sbp-cert.org/certificate-holders/) | `scraper_sbp.py` | `generate_excel_sbp.py` | `monthly-scrape-sbp.yml` (11:00) |
 | **GLOBALG.A.P** | [Supply Chain Portal](https://prod.osapiens.cloud/portal/webbundle/foodplus/field-service-os/supply-chain-portal) (osapiens) | `scraper_ggap.py` | `generate_excel_ggap.py` | `monthly-scrape-ggap.yml` (10:00) |
+| **RSPO** | [rspo.org/search-members](https://rspo.org/search-members/) (Salesforce) | `scraper_rspo.py` | `generate_excel_rspo.py` | `monthly-scrape-rspo.yml` (12:00) |
 
 Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
-`<Scheme> certificates YYYY.MM.DD.xlsx` archive. You can also trigger any scraper
-manually from the **Actions** tab → *Run workflow*.
+`<Scheme> certificates YYYY.MM.DD.xlsx` archive (RSPO, a member register, uses
+`RSPO members …`). You can also trigger any scraper manually from the
+**Actions** tab → *Run workflow*.
 
 ## Combined workbook
 
 `build_combined.py` merges the six **certificate** schemes above (GLOBALG.A.P is a
-producer register with a different shape, so it stays separate) into one workbook,
+producer register and RSPO a membership register — different shapes, so both stay
+separate) into one workbook,
 `All certificates latest.xlsx`, rebuilt monthly by `monthly-build-combined.yml`
 (on the 8th, after all scrapes). It has:
 
@@ -243,3 +246,45 @@ Env vars: `GGAP_COUNTRIES="Latvia,Estonia,Lithuania"` (the scope),
 `GGAP_PRODUCTS="Apple,Tomato"` (scan specific products instead of the full list),
 `GGAP_MAX_PRODUCTS=20` (cap for quick tests), `GGAP_HEADFUL=1` (visible browser),
 `GGAP_ENUM=1` (re-enumerate the product list into `ggap_products.json` and exit).
+
+## RSPO
+
+RSPO publishes **members**, not certificates. `rspo.org/search-members/` is only a
+WordPress shell around an iframe to a Salesforce Visualforce page
+(`rspo.my.salesforce-sites.com/membership/AT_SearchMember_VFPage`), which boots a
+Lightning Out component — so there is no HTML register to parse. The component's
+data comes from a **guest-accessible Apex action**, so `scraper_rspo.py` is a
+**plain HTTP scraper (no browser)**: it bootstraps the Aura framework context from
+the Lightning Out app descriptor (the `fwuid` rotates on every Salesforce deploy,
+so it must be read per run), then POSTs one `getApplicationsByFilter` action with
+an empty filter and `queryLimit = 0` ("no limit"). The whole register (~6.4k
+members) comes back in a single ~3 MB response in a couple of seconds — the
+cheapest scraper here.
+
+The action also returns its own `RecordCount`, so the pull is self-checking: a
+short response is retried, then falls back to unioning per-membership-category
+pulls. Columns:
+
+| Column | Description |
+|---|---|
+| Membership Number | RSPO membership number (e.g. 2-0516-14-000-00) |
+| Member Name | Member organisation |
+| Country | Country / territory |
+| Membership Category | *Ordinary*, *Associate* or *Affiliate* |
+| Sector | e.g. *Oil Palm Growers*, *Retailers*, *Supply Chain Associate* |
+| Status | *Active* or *Suspended* |
+| Last Update | Date the membership record was last updated |
+| Group Members | Number of group members under the membership |
+| Group Member Names | Their names, `;`-joined (the register lists no other detail) |
+| Profile URL | Public member profile on rspo.org (blank if the member has none) |
+
+> **Note:** the register lists both Active and Suspended members, so the Status
+> column is kept rather than pre-filtered. Members are not certificates — there
+> is no CB, certificate number or validity window to scrape — so RSPO stays out
+> of the combined workbook, like GLOBALG.A.P.
+
+```bash
+pip install -r requirements.txt
+python scraper_rspo.py
+python generate_excel_rspo.py
+```
