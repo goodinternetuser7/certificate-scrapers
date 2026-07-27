@@ -14,6 +14,7 @@ this repo via GitHub Actions.
 | **SBP** | [sbp-cert.org/certificate-holders](https://sbp-cert.org/certificate-holders/) | `scraper_sbp.py` | `generate_excel_sbp.py` | `monthly-scrape-sbp.yml` (11:00) |
 | **GLOBALG.A.P** | [Supply Chain Portal](https://prod.osapiens.cloud/portal/webbundle/foodplus/field-service-os/supply-chain-portal) (osapiens) | `scraper_ggap.py` | `generate_excel_ggap.py` | `monthly-scrape-ggap.yml` (10:00) |
 | **RSPO** | [rspo.org/search-members](https://rspo.org/search-members/) (Salesforce) | `scraper_rspo.py` | `generate_excel_rspo.py` | `monthly-scrape-rspo.yml` (12:00) |
+| **FSSC** | [fssc.com/public-register](https://www.fssc.com/public-register/) | `scraper_fssc.py` | `generate_excel_fssc.py` | `monthly-scrape-fssc.yml` (13:00) |
 
 Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 `<Scheme> certificates YYYY.MM.DD.xlsx` archive (RSPO, a member register, uses
@@ -22,7 +23,7 @@ Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 
 ## Combined workbook
 
-`build_combined.py` merges the six **certificate** schemes above (GLOBALG.A.P is a
+`build_combined.py` merges the seven **certificate** schemes above (GLOBALG.A.P is a
 producer register and RSPO a membership register — different shapes, so both stay
 separate) into one workbook,
 `All certificates latest.xlsx`, rebuilt monthly by `monthly-build-combined.yml`
@@ -34,14 +35,14 @@ separate) into one workbook,
 - **All Certificates** — one normalised, filterable row per certificate across
   all schemes (`Scheme, Identifier, Name, Country, Type, Certification Body,
   Status, Valid From, Valid To`), with dates converted to real Excel dates so
-  the whole ~200k-row set sorts and filters together.
+  the whole ~240k-row set sorts and filters together.
 - **Certification Bodies** — each CB, its record count, and which schemes report
-  it (ISCC, SURE, GGL, SBP publish a CB; PEFC and FSC do not).
+  it (ISCC, SURE, GGL, SBP publish a CB; PEFC, FSC and FSSC do not).
 - **one sheet per scheme** — the full native columns, so no detail is lost.
 - **Summary** — record counts per scheme.
 
 The `latest` copy plus the newest dated `All certificates YYYY.MM.DD.xlsx` are
-committed (each ~26 MB); the monthly rebuild prunes the previous dated copy so
+committed (each ~37 MB); the monthly rebuild prunes the previous dated copy so
 only one is kept.
 
 `email-combined.yml` is an on-demand workflow (**Actions → Run workflow**) that
@@ -52,8 +53,8 @@ repo does not). It reuses the same `MAIL_USERNAME` / `MAIL_PASSWORD` secrets bel
 ## Monthly email digest
 
 `monthly-email-digest.yml` runs on the 8th (after every scraper has committed its
-dashboard for the month) and emails all six registers as CSVs, zipped into one
-attachment (~6 MB), to `maris.zamovskis@bmcertification.com`. Rather than
+dashboard for the month) and emails all seven registers as CSVs, zipped into one
+attachment (~11 MB), to `maris.zamovskis@bmcertification.com`. Rather than
 re-running the scrapers, `export_csvs.py` rebuilds each CSV from the committed
 `latest.xlsx` dashboard's `Data` sheet, so the digest is cheap and always matches
 the last committed scrape.
@@ -288,3 +289,59 @@ pip install -r requirements.txt
 python scraper_rspo.py
 python generate_excel_rspo.py
 ```
+
+## FSSC
+
+The FSSC public register (FSSC 22000 food safety + FSSC 24000 social management)
+is a Vue app on a WordPress site, and its table is rendered from a
+guest-accessible **admin-ajax** action (`certificate_getCertificates`) — so
+`scraper_fssc.py` is a **plain HTTP scraper (no browser)**. Three quirks shape it,
+all measured against the live site: Cloudflare answers **403** to a non-browser
+User-Agent; `limit` is capped **server-side at 15** (asking for more still
+returns 15), so the ~42k organizations take ~2.8k paged requests; and Cloudflare
+rate-limits the endpoint at roughly **75 requests/minute** per IP (429 with
+`Retry-After: ~125`). Requests are therefore paced at one per 1.1s (≈55/min,
+measured as sustainable), so a full run takes **~55 minutes**. A 429 isn't fatal:
+the scraper honours `Retry-After` and permanently slows itself down before
+retrying that offset.
+
+The register is offset-paged over a live, alphabetically sorted database that is
+updated daily, so a row inserted or removed mid-run shifts every later offset by
+one and can duplicate or skip a record at the seam. Records are therefore
+de-duplicated by COID and the final count is checked against the API's own
+`total`; a shortfall beyond 0.5% fails the run rather than committing a partial
+register. Columns:
+
+| Column | Description |
+|---|---|
+| COID | FSSC certified-organization ID (e.g. UZB-1-6756-503556) |
+| Organization | Certified organization |
+| Country / City | Site address |
+| Scheme | *FSSC 22000* or *FSSC 24000* |
+| Status | *Valid* or *Suspended* |
+| Food Chain Category | e.g. *CIV : Processing of ambient stable products* |
+| Product Types | e.g. *Packaging*, `;`-joined if several |
+| Scope Statement | The certified scope, as published |
+| Initial Certification | Date of the first certification |
+| Issued / Valid Until | Current certificate validity dates |
+| Last Status Decision | Date of the last status decision (*"suspended since"*) |
+| GFSI Recognized | Whether the certification is GFSI-recognized |
+
+> **Note:** the register lists both Valid and Suspended organizations, so the
+> Status column is kept rather than pre-filtered. It publishes no issuing
+> Certification Body (that is a *Public Register Plus* feature), so — like PEFC
+> and FSC — that column is omitted and the dashboard's second dimension is the
+> food chain **Category**. A quarter of organizations hold several categories;
+> the dashboard keys on the *first* one, so its selector stays the register's own
+> list of 16 categories rather than ~200 combination strings, while the Data
+> sheet keeps the full list per row. A few published scope statements and city
+> names contain control characters that Excel rejects — the scraper strips those.
+
+```bash
+pip install -r requirements.txt
+python scraper_fssc.py
+python generate_excel_fssc.py
+```
+
+Env vars for local runs: `FSSC_MAX_PAGES=20` (cap pages for a quick test),
+`FSSC_DELAY=1.1` (seconds between requests), `FSSC_PAGE_SIZE=15`.

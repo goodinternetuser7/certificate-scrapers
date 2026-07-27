@@ -3,7 +3,7 @@ name: Monthly CSV Email Digest
 on:
   schedule:
     # 12:00 UTC on the 8th — after every scraper has committed its dashboard for
-    # the month (ISCC/SURE/PEFC/FSC/SBP on the 1st, GGL on the 8th at 10:00).
+    # the month (ISCC/SURE/PEFC/FSC/SBP/FSSC on the 1st, GGL on the 8th at 10:00).
     - cron: '0 12 8 * *'
   workflow_dispatch:
 
@@ -46,7 +46,7 @@ jobs:
             Monthly export of all public certificate-register CSVs, attached as a
             single zip:
 
-              • ISCC   • SURE   • PEFC   • FSC   • GGL   • SBP
+              • ISCC   • SURE   • PEFC   • FSC   • GGL   • SBP   • FSSC
 
             Rebuilt from the latest committed dashboards in
             goodinternetuser7/certificate-scrapers. Automated message — do not reply.
