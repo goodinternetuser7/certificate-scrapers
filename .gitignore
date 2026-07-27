@@ -12,6 +12,7 @@ GGL certificates*.csv
 SBP certificates*.csv
 GGAP certificates*.csv
 RSPO members*.csv
+FSSC certificates*.csv
 
 # Email-digest build artifacts
 csv_export/

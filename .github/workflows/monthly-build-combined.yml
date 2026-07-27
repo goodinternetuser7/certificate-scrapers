@@ -3,7 +3,7 @@ name: Monthly Combined Workbook
 on:
   schedule:
     # 11:00 UTC on the 8th — after every scraper has committed its dashboard
-    # (ISCC/SURE/PEFC/FSC/SBP on the 1st, GGL on the 8th at 10:00).
+    # (ISCC/SURE/PEFC/FSC/SBP/FSSC on the 1st, GGL on the 8th at 10:00).
     - cron: '0 11 8 * *'
   workflow_dispatch:
 

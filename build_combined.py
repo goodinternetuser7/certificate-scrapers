@@ -16,14 +16,14 @@ never lost to a reload):
       - Certification Bodies
                      filterable table of each certification body → record count
                      → which schemes report it (ISCC, SURE, GGL, SBP publish a
-                     CB; PEFC and FSC do not).
-      - ISCC … SBP   full native columns per scheme, so no detail is lost.
+                     CB; PEFC, FSC and FSSC do not).
+      - ISCC … FSSC  full native columns per scheme, so no detail is lost.
       - Summary      record counts per scheme.
-  • "All certificates (dashboard) latest.xlsx" — the same but without the six
+  • "All certificates (dashboard) latest.xlsx" — the same but without the
     per-scheme detail sheets, so it's small enough (~10 MB) to email.
 
 The combined set's second dashboard *selector* dimension is Scheme (Certification
-Body is absent for FSC/PEFC — 89% of rows — so an interactive per-country CB
+Body is absent for FSC/PEFC/FSSC — most rows — so an interactive per-country CB
 split would be mostly empty). The Dashboard still surfaces CBs via a static
 "Top Certification Bodies" table + bar, and the "Certification Bodies" sheet has
 the full breakdown.
@@ -44,7 +44,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from generate_excel import aggregate, build_excel, hdr
 
-SCHEMES = ["ISCC", "SURE", "PEFC", "FSC", "GGL", "SBP"]
+SCHEMES = ["ISCC", "SURE", "PEFC", "FSC", "GGL", "SBP", "FSSC"]
 BLUE, WHITE, STRIPE = "005798", "FFFFFF", "EBF3FB"
 
 COMMON = ["Scheme", "Identifier", "Name", "Country", "Type",
@@ -70,8 +70,14 @@ MAPPINGS = {
             "Country": "Country", "Type": "Certificate Type",
             "Certification Body": "Certification Body", "Status": "Status",
             "Valid From": "Date of Issue", "Valid To": "Date of Expiry"},
+    # Type = the FSSC standard (22000 / 24000); the combined Scheme column is
+    # just "FSSC", so this is where that distinction survives.
+    "FSSC": {"Identifier": "COID", "Name": "Organization", "Country": "Country",
+             "Type": "Scheme", "Status": "Status",
+             "Valid From": "Issued", "Valid To": "Valid Until"},
 }
-DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d %B %Y", "%d %b %Y")
+DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d %B %Y", "%d %b %Y",
+                "%d-%m-%Y")     # FSSC
 
 FULL_OUT = "All certificates latest.xlsx"
 SLIM_OUT = "All certificates (dashboard) latest.xlsx"
@@ -143,7 +149,7 @@ def add_summary_sheet(wb, per_scheme, total):
     note_row = ws.max_row + 2
     ws.cell(row=note_row, column=1).value = (
         "Certification Body is published only by ISCC, SURE, GGL and SBP "
-        "(see the Certification Bodies sheet). PEFC and FSC do not publish it."
+        "(see the Certification Bodies sheet). PEFC, FSC and FSSC do not publish it."
     )
     ws.cell(row=note_row, column=1).font = Font(italic=True, size=9, color="888888")
 
@@ -183,7 +189,7 @@ def add_cb_summary_sheet(wb, combined):
 def add_cb_to_dashboard(wb, combined, top_n=15):
     """Surface certification bodies on the Dashboard front page: a ranked table
     + horizontal bar of the top-N CBs by record count. Static (not tied to the
-    Country/Scheme selectors) because ~89% of rows carry no CB, which would make
+    Country/Scheme selectors) because most rows carry no CB, which would make
     an interactive per-country CB split mostly empty. Placed below the existing
     pie/bar charts so it doesn't overlap them."""
     from collections import defaultdict

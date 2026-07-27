@@ -1,0 +1,43 @@
+name: Monthly FSSC Certificate Scraper
+
+on:
+  schedule:
+    - cron: '0 13 1 * *'   # 13:00 UTC on the 1st of every month (after the others)
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # ~2.8k paged requests (limit is capped at 15/page) paced at 1.1s apiece to
+    # stay under Cloudflare's rate limit → ~55 min, plus headroom for 429 waits.
+    timeout-minutes: 120
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet -r requirements.txt
+
+      - name: Run scraper
+        run: python scraper_fssc.py
+
+      - name: Generate Excel dashboard
+        run: python generate_excel_fssc.py
+
+      - name: Commit and push Excel files
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rm -f --ignore-unmatch "FSSC certificates"*.csv
+          git add "FSSC certificates"*.xlsx
+          git diff --cached --quiet && echo "No changes to commit." && exit 0
+          git commit -m "chore: monthly FSSC certificate scrape $(date -u +%Y-%m-%d)"
+          git push
