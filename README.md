@@ -35,14 +35,14 @@ separate) into one workbook,
 - **All Certificates** — one normalised, filterable row per certificate across
   all schemes (`Scheme, Identifier, Name, Country, Type, Certification Body,
   Status, Valid From, Valid To`), with dates converted to real Excel dates so
-  the whole ~200k-row set sorts and filters together.
+  the whole ~240k-row set sorts and filters together.
 - **Certification Bodies** — each CB, its record count, and which schemes report
   it (ISCC, SURE, GGL, SBP publish a CB; PEFC, FSC and FSSC do not).
 - **one sheet per scheme** — the full native columns, so no detail is lost.
 - **Summary** — record counts per scheme.
 
 The `latest` copy plus the newest dated `All certificates YYYY.MM.DD.xlsx` are
-committed (each ~26 MB); the monthly rebuild prunes the previous dated copy so
+committed (each ~37 MB); the monthly rebuild prunes the previous dated copy so
 only one is kept.
 
 `email-combined.yml` is an on-demand workflow (**Actions → Run workflow**) that
@@ -54,7 +54,7 @@ repo does not). It reuses the same `MAIL_USERNAME` / `MAIL_PASSWORD` secrets bel
 
 `monthly-email-digest.yml` runs on the 8th (after every scraper has committed its
 dashboard for the month) and emails all seven registers as CSVs, zipped into one
-attachment (~6 MB), to `maris.zamovskis@bmcertification.com`. Rather than
+attachment (~11 MB), to `maris.zamovskis@bmcertification.com`. Rather than
 re-running the scrapers, `export_csvs.py` rebuilds each CSV from the committed
 `latest.xlsx` dashboard's `Data` sheet, so the digest is cheap and always matches
 the last committed scrape.
@@ -331,7 +331,11 @@ register. Columns:
 > Status column is kept rather than pre-filtered. It publishes no issuing
 > Certification Body (that is a *Public Register Plus* feature), so — like PEFC
 > and FSC — that column is omitted and the dashboard's second dimension is the
-> food chain **Category**.
+> food chain **Category**. A quarter of organizations hold several categories;
+> the dashboard keys on the *first* one, so its selector stays the register's own
+> list of 16 categories rather than ~200 combination strings, while the Data
+> sheet keeps the full list per row. A few published scope statements and city
+> names contain control characters that Excel rejects — the scraper strips those.
 
 ```bash
 pip install -r requirements.txt

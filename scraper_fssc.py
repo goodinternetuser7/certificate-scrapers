@@ -33,6 +33,7 @@ Output columns:
 
 import csv
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -59,6 +60,9 @@ HEADERS = {
 # Records missing at the end of a run, as a fraction of the API's own total,
 # that we still accept as live-register drift rather than a broken scrape.
 SHORTFALL_TOLERANCE = 0.005
+# Control characters Excel (openpyxl) refuses to write — a few published scope
+# statements and cities contain \x02.
+ILLEGAL_CHARS = re.compile(r"[\000-\010\013\014\016-\037]")
 
 FIELDNAMES = [
     "COID", "Organization", "Country", "City", "Scheme", "Status",
@@ -110,32 +114,39 @@ def fetch_page(offset, limit=PAGE_SIZE):
     raise RuntimeError(f"offset {offset} still rate-limited after {RETRIES} tries")
 
 
+def clean(value):
+    """Collapse whitespace (scope statements carry hard line breaks, which would
+    otherwise break the CSV row) and drop the control characters a handful of
+    records contain — \\x02 turns up in scope statements and cities, and openpyxl
+    refuses to write it, which would fail the dashboard build downstream."""
+    return " ".join(ILLEGAL_CHARS.sub("", "" if value is None else str(value)).split())
+
+
 def category_names(block):
     """`categoryX` blocks are {"categories": [{"name": ...}, ...]} or null."""
     if not block:
         return ""
-    return "; ".join(c.get("name", "") for c in block.get("categories") or [] if c.get("name"))
+    return "; ".join(clean(c.get("name")) for c in block.get("categories") or [] if c.get("name"))
 
 
 def parse(cert):
     org = cert.get("organisation") or {}
     addr = org.get("address") or {}
     return {
-        "COID": cert.get("coid", ""),
-        "Organization": org.get("name") or cert.get("title", ""),
-        "Country": addr.get("country", ""),
-        "City": addr.get("city", ""),
-        "Scheme": cert.get("scheme", ""),
-        "Status": cert.get("status", ""),
+        "COID": clean(cert.get("coid")),
+        "Organization": clean(org.get("name") or cert.get("title")),
+        "Country": clean(addr.get("country")),
+        "City": clean(addr.get("city")),
+        "Scheme": clean(cert.get("scheme")),
+        "Status": clean(cert.get("status")),
         "Food Chain Category": category_names(cert.get("categoryFoodChain")),
         "Product Types": category_names(cert.get("categoryProductType")),
-        # Scope statements carry hard line breaks; flatten so the CSV stays one row.
-        "Scope Statement": " ".join((cert.get("scopeStatement") or "").split()),
-        "Initial Certification": cert.get("initialCertification", ""),
-        "Issued": cert.get("issued", ""),
-        "Valid Until": cert.get("validUntil", ""),
-        "Last Status Decision": cert.get("lastStatusDecision", ""),
-        "GFSI Recognized": cert.get("gfsiRecognized", ""),
+        "Scope Statement": clean(cert.get("scopeStatement")),
+        "Initial Certification": clean(cert.get("initialCertification")),
+        "Issued": clean(cert.get("issued")),
+        "Valid Until": clean(cert.get("validUntil")),
+        "Last Status Decision": clean(cert.get("lastStatusDecision")),
+        "GFSI Recognized": clean(cert.get("gfsiRecognized")),
     }
 
 

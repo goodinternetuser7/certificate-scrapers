@@ -24,13 +24,19 @@ def find_csv():
 
 
 def load_data(path):
-    """Country + food chain Category (the register publishes no CB)."""
+    """Country + food chain Category (the register publishes no CB).
+
+    A quarter of the organizations are certified for several food chain
+    categories; the dashboard keys on the *first* one, so the selector stays the
+    register's own list of 16 categories instead of ~200 combination strings.
+    The Data sheet still carries every category per row."""
     rows = []
     with open(path, newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             country = (r.get("Country") or "Unknown").strip() or "Unknown"
-            cat = (r.get("Food Chain Category") or "Unknown").strip() or "Unknown"
-            rows.append({"country": country, "cb": cat})
+            cats = [c.strip() for c in (r.get("Food Chain Category") or "").split(";")]
+            cats = [c for c in cats if c and c != ":"]     # a few rows carry an empty category
+            rows.append({"country": country, "cb": cats[0] if cats else "Unknown"})
     return rows
 
 

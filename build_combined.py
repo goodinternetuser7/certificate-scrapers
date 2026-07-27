@@ -20,7 +20,7 @@ never lost to a reload):
       - ISCC … FSSC  full native columns per scheme, so no detail is lost.
       - Summary      record counts per scheme.
   • "All certificates (dashboard) latest.xlsx" — the same but without the
-    per-scheme detail sheets, so it's small enough (~10 MB) to email.
+    per-scheme detail sheets, so it's small enough (~14 MB) to email.
 
 The combined set's second dashboard *selector* dimension is Scheme (Certification
 Body is absent for FSC/PEFC/FSSC — most rows — so an interactive per-country CB
@@ -156,7 +156,7 @@ def add_summary_sheet(wb, per_scheme, total):
 
 def add_cb_summary_sheet(wb, combined):
     """One row per certification body: record count + which schemes report it.
-    PEFC/FSC carry no CB, so those rows are simply excluded (blank CB)."""
+    PEFC/FSC/FSSC carry no CB, so those rows are simply excluded (blank CB)."""
     from collections import defaultdict
     counts = defaultdict(int)
     schemes = defaultdict(set)
