@@ -15,6 +15,7 @@ this repo via GitHub Actions.
 | **GLOBALG.A.P** | [Supply Chain Portal](https://prod.osapiens.cloud/portal/webbundle/foodplus/field-service-os/supply-chain-portal) (osapiens) | `scraper_ggap.py` | `generate_excel_ggap.py` | `monthly-scrape-ggap.yml` (10:00) |
 | **RSPO** | [rspo.org/search-members](https://rspo.org/search-members/) (Salesforce) | `scraper_rspo.py` | `generate_excel_rspo.py` | `monthly-scrape-rspo.yml` (12:00) |
 | **FSSC** | [fssc.com/public-register](https://www.fssc.com/public-register/) | `scraper_fssc.py` | `generate_excel_fssc.py` | `monthly-scrape-fssc.yml` (13:00) |
+| **ENplus** | [enplus-pellets.eu/producer](https://enplus-pellets.eu/producer/) | `scraper_enplus.py` | `generate_excel_enplus.py` | `monthly-scrape-enplus.yml` (14:00) |
 
 Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 `<Scheme> certificates YYYY.MM.DD.xlsx` archive (RSPO, a member register, uses
@@ -23,7 +24,7 @@ Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 
 ## Combined workbook
 
-`build_combined.py` merges the seven **certificate** schemes above (GLOBALG.A.P is a
+`build_combined.py` merges the eight **certificate** schemes above (GLOBALG.A.P is a
 producer register and RSPO a membership register — different shapes, so both stay
 separate) into one workbook,
 `All certificates latest.xlsx`, rebuilt monthly by `monthly-build-combined.yml`
@@ -37,7 +38,7 @@ separate) into one workbook,
   Status, Valid From, Valid To`), with dates converted to real Excel dates so
   the whole ~240k-row set sorts and filters together.
 - **Certification Bodies** — each CB, its record count, and which schemes report
-  it (ISCC, SURE, GGL, SBP publish a CB; PEFC, FSC and FSSC do not).
+  it (ISCC, SURE, GGL, SBP and ENplus publish a CB; PEFC, FSC and FSSC do not).
 - **one sheet per scheme** — the full native columns, so no detail is lost.
 - **Summary** — record counts per scheme.
 
@@ -53,7 +54,7 @@ repo does not). It reuses the same `MAIL_USERNAME` / `MAIL_PASSWORD` secrets bel
 ## Monthly email digest
 
 `monthly-email-digest.yml` runs on the 8th (after every scraper has committed its
-dashboard for the month) and emails all seven registers as CSVs, zipped into one
+dashboard for the month) and emails all eight registers as CSVs, zipped into one
 attachment (~11 MB), to `maris.zamovskis@bmcertification.com`. Rather than
 re-running the scrapers, `export_csvs.py` rebuilds each CSV from the committed
 `latest.xlsx` dashboard's `Data` sheet, so the digest is cheap and always matches
@@ -345,3 +346,60 @@ python generate_excel_fssc.py
 
 Env vars for local runs: `FSSC_MAX_PAGES=20` (cap pages for a quick test),
 `FSSC_DELAY=1.1` (seconds between requests), `FSSC_PAGE_SIZE=15`.
+
+## ENplus
+
+The ENplus® producer register is a WordPress page whose table is rendered by the
+site's own `enplus_category_list` plugin over **admin-ajax**, so `scraper_enplus.py`
+is a **plain HTTP scraper (no browser, no credentials)** and a full run takes
+**under two minutes**. Two actions are involved:
+
+- `handle_category_search_request` returns the results table as an HTML fragment.
+  Its `data` parameter is the search form's own jQuery serialisation, in which
+  the hidden `category` field picks the register (17 = Producer) and the
+  `certificate_status[]` boxes are 1 = Active, 2 = Suspended, 3 = Terminated.
+  **All three are ticked by default**, so — unlike the other scrapers here — this
+  register is not a snapshot of valid certificates but the full history, ~42% of
+  it terminated. Those ids are read off the live page each run rather than
+  hard-coded, since a plugin rebuild could renumber them.
+- `handle_cert_request` returns one company's popup. It is the only place the
+  **certification body**, quality classes, certified activities, legal address,
+  certified sites and approved bag designs appear, so every company is fetched
+  (six at a time) and merged into its row. The popup repeats the ENplus ID, which
+  doubles as a check that the merge lined up: any mismatch fails the run.
+
+The register reports page counts rather than a total, so the completeness check is
+that the row count falls inside the range those pages imply; the pull is also
+unioned by company id, so a row shifting between pages cannot duplicate a company.
+
+| Column | Description |
+|---|---|
+| ENplus ID | ENplus® company id, country-prefixed (e.g. `AT 001`) |
+| Producer | Company name, as published |
+| Status | *Active*, *Suspended* or *Terminated* |
+| Status Since | Date of that status — only published when not Active |
+| Country / City | From the register's table |
+| Certification Body | The certifying body (ENplus publishes this; most schemes here do not) |
+| Quality Classes | e.g. *ENplus® A1 - 6mm*, `;`-joined if several |
+| Certified Activities | Production, bagging, large-scale delivery, storage … |
+| Legal Address | From the company popup |
+| Certified Sites / Certified Site Names | Site count, and each site with its own status — a site can be suspended while its company is active |
+| Bag Designs | Number of approved bag designs |
+| Website / Company ID | Official site; internal id used to re-fetch the popup |
+
+> **Note:** the register carries **no certificate numbers and no validity dates**
+> — the "Since" date of a suspension or termination is the only date published.
+> Older terminated entries are also thinly populated (about 4% have no
+> certification body and 18% no certified activities, almost all of them
+> terminated); those gaps are in the source and are left blank rather than
+> guessed. Four companies have no country in the table at all.
+
+```bash
+pip install -r requirements.txt
+python scraper_enplus.py
+python generate_excel_enplus.py
+```
+
+Env vars for local runs: `ENPLUS_MAX_PAGES=1` (cap pages for a quick test),
+`ENPLUS_WORKERS=6` (concurrent popup fetches), `ENPLUS_SKIP_DETAILS=1` (list only,
+no popups).

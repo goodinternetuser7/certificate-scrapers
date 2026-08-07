@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from openpyxl import load_workbook
 
-SCHEMES = ["ISCC", "SURE", "PEFC", "FSC", "GGL", "SBP", "FSSC"]
+SCHEMES = ["ISCC", "SURE", "PEFC", "FSC", "GGL", "SBP", "FSSC", "ENplus"]
 EXPORT_DIR = "csv_export"
 
 
