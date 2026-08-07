@@ -15,9 +15,10 @@ never lost to a reload):
                      Certification Body, Status, Valid From, Valid To).
       - Certification Bodies
                      filterable table of each certification body → record count
-                     → which schemes report it (ISCC, SURE, GGL, SBP publish a
-                     CB; PEFC, FSC and FSSC do not).
-      - ISCC … FSSC  full native columns per scheme, so no detail is lost.
+                     → which schemes report it (ISCC, SURE, GGL, SBP and ENplus
+                     publish a CB; PEFC, FSC and FSSC do not).
+      - ISCC … ENplus
+                     full native columns per scheme, so no detail is lost.
       - Summary      record counts per scheme.
   • "All certificates (dashboard) latest.xlsx" — the same but without the
     per-scheme detail sheets, so it's small enough (~14 MB) to email.
@@ -44,7 +45,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from generate_excel import aggregate, build_excel, hdr
 
-SCHEMES = ["ISCC", "SURE", "PEFC", "FSC", "GGL", "SBP", "FSSC"]
+SCHEMES = ["ISCC", "SURE", "PEFC", "FSC", "GGL", "SBP", "FSSC", "ENplus"]
 BLUE, WHITE, STRIPE = "005798", "FFFFFF", "EBF3FB"
 
 COMMON = ["Scheme", "Identifier", "Name", "Country", "Type",
@@ -75,6 +76,13 @@ MAPPINGS = {
     "FSSC": {"Identifier": "COID", "Name": "Organization", "Country": "Country",
              "Type": "Scheme", "Status": "Status",
              "Valid From": "Issued", "Valid To": "Valid Until"},
+    # ENplus certifies companies rather than individual certificates, so the
+    # Identifier is the ENplus company id and Type carries the quality classes.
+    # The register publishes no validity dates (the suspension/termination
+    # "Since" date is not one), so both date columns stay empty.
+    "ENplus": {"Identifier": "ENplus ID", "Name": "Producer", "Country": "Country",
+               "Type": "Quality Classes", "Certification Body": "Certification Body",
+               "Status": "Status"},
 }
 DATE_FORMATS = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d %B %Y", "%d %b %Y",
                 "%d-%m-%Y")     # FSSC
