@@ -58,6 +58,43 @@ emails a **link** to the latest dated workbook (not an attachment — a Gmail-se
 attachment to a Microsoft 365 inbox gets quarantined; a plain link to the public
 repo does not). It reuses the same `MAIL_USERNAME` / `MAIL_PASSWORD` secrets below.
 
+## Per-run email notifications
+
+`scrape-notify.yml` emails one short message to
+`maris.zamovskis@bmcertification.com` **every time a scrape finishes**, whether it
+succeeded or failed — scheduled runs and manual dispatches alike:
+
+```
+Subject: [scrapers] ✅ Monthly SBP Certificate Scraper — 750 certificate holders
+
+  Result:  Parsed 750 certificate holders (429 Active).
+  Commit:  chore: monthly SBP certificate scrape 2026-08-07
+  Trigger: schedule
+  Run:     https://github.com/…/actions/runs/…
+```
+
+A failure instead reads `❌ …`, names the step that failed, and quotes the last
+12 lines of that step's own output, so the mail usually says *why* without
+opening the run.
+
+It is a single `workflow_run` listener rather than a notify step inside each of
+the ten scrapers: one file to maintain, and it still fires when a run dies
+before reaching a final step (cancelled, or the runner timing out mid-scrape) —
+an in-workflow step would be skipped in exactly those cases. The trade-off is
+that `workflow_run` only ever executes the default-branch copy of the file, so
+it cannot be exercised from a PR branch.
+
+Counts are read out of the finished run's log (`Parsed N …`, or `Wrote N rows`
+for GLOBALG.A.P). If a log is unavailable the mail still identifies the run, its
+outcome and the failing step — every probe is best-effort by design, since an
+email that says only "failed, here is the link" beats silence. Reuses the same
+`MAIL_USERNAME` / `MAIL_PASSWORD` secrets as the digest, and is plain text with
+no attachment for the same Microsoft 365 reason.
+
+> Without this, the only signal was GitHub's own failure email, which for a
+> *scheduled* run goes to whoever last committed the workflow file — which is how
+> three failed scrapes on 2026-08-01 went unnoticed until the 7th.
+
 ## Monthly email digest
 
 `monthly-email-digest.yml` runs on the 8th (after every scraper has committed its
