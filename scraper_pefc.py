@@ -3,6 +3,11 @@
 Scrapes active (valid) PEFC certificates & licences from the public
 "Find certified" search at https://pefc.org/find-certified-legacy
 
+!! BROKEN SINCE 2026-08-01: PEFC deleted the Caspio DataPage below, and its
+   replacement (https://one.pefc.org/iframe) is answering HTTP 500. preflight()
+   detects this and exits with an explanation; see the README's PEFC section.
+   Everything else here describes the retired source.
+
 The search is a Caspio DataPage embedded on the PEFC site. It renders only in a
 browser (async JS embed), so we drive it with headless Chromium via Playwright:
 filter Status = Valid, set 250 results per page, then page through the whole set.
@@ -446,7 +451,36 @@ def scrape_once():
             browser.close()
 
 
+def preflight():
+    """Fail fast, and accurately, when the source itself is gone.
+
+    On 2026-08-01 this scraper burned seven minutes on six identical 60-second
+    `wait_for_selector` timeouts and then reported "union still short after 6
+    passes", which reads like scraper flakiness. It was not: PEFC had **deleted**
+    the Caspio DataPage, and its replacement — the Find Certified database now
+    embedded on https://pefc.org/find-certified from https://one.pefc.org/iframe
+    — was answering HTTP 500. Neither is something a retry can fix, so say so
+    in one line instead of timing out six times.
+    """
+    try:
+        import requests
+        body = requests.get(DATAPAGE_URL, timeout=60,
+                            headers={"User-Agent": "Mozilla/5.0 PEFC-cert-scraper/1.0"}).text
+    except Exception as exc:                      # network trouble: let the scrape try
+        print(f"Pre-flight check could not reach Caspio ({exc}); continuing anyway.")
+        return
+    if "DataPage does not exist" in body:
+        raise SystemExit(
+            "PEFC has retired the Caspio DataPage this scraper reads "
+            f"({DATAPAGE_URL} → 'DataPage does not exist', Caspio error 50501).\n"
+            "The register moved to https://one.pefc.org/iframe, embedded on "
+            "https://pefc.org/find-certified — this scraper needs to be repointed "
+            "at it before it can run again.")
+
+
 def main():
+    preflight()
+
     # Caspio's "next" occasionally advances two pages at once, so a single pass drops
     # a few pages — but a *different* few each time. Rather than retry from scratch,
     # we UNION successive passes by Code: the gaps are filled within a couple of

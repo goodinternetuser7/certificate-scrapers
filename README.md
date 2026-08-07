@@ -22,6 +22,13 @@ Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
 `RSPO members …`). You can also trigger any scraper manually from the
 **Actions** tab → *Run workflow*.
 
+The workflows are staggered an hour apart, but GitHub's cron is delayed by hours
+and the long scrapes overlap, so a run can finish and find that a sibling has
+already pushed to `master`. Every commit step therefore **rebases and retries**
+(three times) rather than pushing once: an unguarded push is how the 2026-08-01
+GLOBALG.A.P run — 74 minutes of scraping, dashboard already generated — was
+thrown away to a non-fast-forward rejection.
+
 ## Combined workbook
 
 `build_combined.py` merges the eight **certificate** schemes above (GLOBALG.A.P is a
@@ -80,6 +87,28 @@ python generate_excel.py # or generate_excel_sure.py
 ```
 
 ## PEFC
+
+> ### ⚠️ Broken since 2026-08-01 — the source was retired
+>
+> PEFC **deleted** the Caspio DataPage this scraper reads: it now answers
+> *"DataPage does not exist"* (Caspio error 50501), and that message renders
+> straight into `pefc.org/find-certified-legacy` in place of the register. The
+> replacement is a new database at **`https://one.pefc.org/iframe`** (a Laravel +
+> Livewire app, embedded on `pefc.org/find-certified`), but as of 2026-08-07 that
+> route answers **HTTP 500** to a browser and to curl alike — the app is up
+> (`/up` responds) but its register page is erroring on PEFC's side. So the
+> scraper cannot yet be repointed; there is nothing scrapeable at either address.
+>
+> `scraper_pefc.py` now **pre-flights the DataPage and exits in under a second**
+> with that explanation, instead of burning seven minutes on six identical
+> 60-second Playwright timeouts and reporting "union still short after 6 passes",
+> which read like scraper flakiness. The monthly workflow is left on its schedule
+> so the failure stays visible. **`PEFC certificates latest.xlsx` is therefore
+> frozen at the 2026-07-01 scrape**, and the combined workbook keeps merging that
+> snapshot.
+>
+> Everything below describes the retired Caspio source and is kept for whoever
+> repoints the scraper.
 
 PEFC's "Find certified" search is a **Caspio DataPage** that only renders in a
 browser, so `scraper_pefc.py` drives headless Chromium via **Playwright**: it filters
@@ -200,6 +229,17 @@ and country flag from the header. Columns:
 
 > **Note:** the register lists all statuses, not just active ones, so the Status
 > column is kept rather than pre-filtered.
+
+> **Blank pages:** on 2026-08-01 the register answered `200 OK` with a page
+> carrying no holder panels at all; the scraper read that as "no results" and
+> failed the run in 18 seconds. A re-run on unchanged code scraped all 750
+> holders, so it was a blip, not a layout change. Because paging past the end
+> re-serves earlier holders rather than an empty page, a holder-less page is
+> *always* anomalous — so it is now retried four times (and what came back is
+> logged: status, size, title) before the run fails. That also closes a latent
+> hole: a blank page in the *middle* of the walk used to end the loop quietly
+> and commit a truncated register. As a second net, the run fails if it stops
+> more than one page short of the highest page the pager advertised.
 
 ```bash
 pip install -r requirements.txt

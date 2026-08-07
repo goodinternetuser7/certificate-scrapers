@@ -40,4 +40,12 @@ jobs:
           git add "FSSC certificates"*.xlsx
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly FSSC certificate scrape $(date -u +%Y-%m-%d)"
+          # Sibling scrape workflows commit to master while this one runs, so a
+          # plain push can lose the whole scrape to a non-fast-forward rejection
+          # (that is how the GLOBALG.A.P run of 2026-08-01 was thrown away).
+          for attempt in 1 2 3; do
+            if git push; then exit 0; fi
+            echo "Push rejected (attempt $attempt/3) — rebasing onto origin/master …"
+            git pull --rebase --autostash origin master
+          done
           git push
