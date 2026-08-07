@@ -54,9 +54,16 @@ jobs:
           TRIGGER: ${{ github.event.workflow_run.event }}
           STARTED: ${{ github.event.workflow_run.run_started_at }}
         run: |
-          # Deliberately not `set -e`: every probe below is best-effort, and an
-          # email saying only "failed, here is the link" still beats silence.
-          set -uo pipefail
+          # Every probe below is best-effort, so `-e` and `pipefail` must BOTH be
+          # off. Actions runs steps as `bash -e {0}`, and `set -uo pipefail` does
+          # not clear that: with pipefail on, a `grep` that simply finds nothing
+          # returns 1, the pipeline returns 1, the assignment returns 1, and -e
+          # kills the step. That is exactly how the first GLOBALG.A.P
+          # notification died — its log has no "Parsed …" line, so the very first
+          # grep found nothing and the step aborted before reaching the fallback
+          # patterns. Scrapers whose logs do match sailed through, which is why
+          # it survived the ISCC smoke test.
+          set +e +o pipefail -u
 
           gh run view "$RUN_ID" -R "$REPO" --log > run.log 2>/dev/null || : > run.log
           # `gh run view --log` prefixes every line with "job<TAB>step<TAB>", then
@@ -115,7 +122,32 @@ jobs:
             echo "EOF_NOTIFY_BODY"
           } >> "$GITHUB_ENV"
 
+      # If composing the message ever dies again, the mail must still go out —
+      # a notifier that fails silently is the one thing this cannot be. The step
+      # above stays failed, so the bad run is still visible in the Actions tab.
+      - name: Fall back to a bare notification
+        if: failure()
+        env:
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$CONCLUSION" = "success" ]; then ICON="✅"; else ICON="❌"; fi
+          {
+            echo "SUBJECT=[scrapers] $ICON $RUN_NAME"
+            echo "BODY<<EOF_NOTIFY_BODY"
+            echo "$RUN_NAME — $CONCLUSION"
+            echo
+            echo "Composing the full summary failed, so this is the bare notification."
+            echo
+            echo "  Run:     $RUN_URL"
+            echo
+            echo "Automated message — do not reply."
+            echo "EOF_NOTIFY_BODY"
+          } >> "$GITHUB_ENV"
+
       - name: Send email
+        if: always()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com

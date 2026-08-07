@@ -95,6 +95,16 @@ by design, since an email that says only "failed, here is the link" beats
 silence. Reuses the same `MAIL_USERNAME` / `MAIL_PASSWORD` secrets as the digest,
 and is plain text with no attachment for the same Microsoft 365 reason.
 
+> **`set +e +o pipefail` is load-bearing.** Actions runs every step as
+> `bash -e {0}`, and `set -uo pipefail` does *not* clear that. With `pipefail`
+> on, a `grep` that simply finds nothing returns 1, so the pipeline returns 1,
+> so the assignment returns 1, and `-e` kills the step. That is how the first
+> GLOBALG.A.P notification died: its log has no `Parsed …` line, so the very
+> first grep found nothing and the step aborted before reaching the fallback
+> patterns — while every scraper whose log *did* match sailed through. A
+> `failure()` step now also sends a bare notification if composing ever dies
+> again, because a notifier that fails silently is the one thing this cannot be.
+
 > Without this, the only signal was GitHub's own failure email, which for a
 > *scheduled* run goes to whoever last committed the workflow file — which is how
 > three failed scrapes on 2026-08-01 went unnoticed until the 7th.
