@@ -18,7 +18,8 @@ the grid of products x countries. We restrict countries to a configured set
 product and de-duplicate.
 
 Env:
-    GGAP_COUNTRIES     comma list of country names (default "Latvia,Estonia,Lithuania")
+    GGAP_COUNTRIES     comma list of country names
+                       (default "Latvia,Estonia,Lithuania,Finland")
     GGAP_MAX_PRODUCTS  cap products scanned (local testing); unset = all
     GGAP_PRODUCTS      comma list of products to scan instead of ggap_products.json
     GGAP_HEADFUL       set to 1 to watch the browser
@@ -39,7 +40,7 @@ URL = ("https://prod.osapiens.cloud/portal/webbundle/foodplus/field-service-os/"
        "supply-chain-portal?app-route-hash=%252Fcertificates")
 
 COUNTRIES = [c.strip() for c in
-             os.environ.get("GGAP_COUNTRIES", "Latvia,Estonia,Lithuania").split(",") if c.strip()]
+             os.environ.get("GGAP_COUNTRIES", "Latvia,Estonia,Lithuania,Finland").split(",") if c.strip()]
 MAX_PRODUCTS = int(os.environ["GGAP_MAX_PRODUCTS"]) if os.environ.get("GGAP_MAX_PRODUCTS") else None
 HEADFUL = os.environ.get("GGAP_HEADFUL") == "1"
 PRODUCTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ggap_products.json")
