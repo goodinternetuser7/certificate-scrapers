@@ -60,9 +60,10 @@ repo does not). It reuses the same `MAIL_USERNAME` / `MAIL_PASSWORD` secrets bel
 
 ## Per-run email notifications
 
-`scrape-notify.yml` emails one short message to
-`maris.zamovskis@bmcertification.com` **every time a scrape finishes**, whether it
-succeeded or failed — scheduled runs and manual dispatches alike:
+`run-notify.yml` emails one short message to
+`maris.zamovskis@bmcertification.com` **every time any workflow here finishes** —
+the ten scrapers, the combined-workbook build and the two email jobs — whether it
+succeeded or failed, scheduled runs and manual dispatches alike:
 
 ```
 Subject: [scrapers] ✅ Monthly SBP Certificate Scraper — 750 certificate holders
@@ -78,18 +79,31 @@ A failure instead reads `❌ …`, names the step that failed, and quotes the la
 opening the run.
 
 It is a single `workflow_run` listener rather than a notify step inside each of
-the ten scrapers: one file to maintain, and it still fires when a run dies
+the thirteen workflows: one file to maintain, and it still fires when a run dies
 before reaching a final step (cancelled, or the runner timing out mid-scrape) —
-an in-workflow step would be skipped in exactly those cases. The trade-off is
-that `workflow_run` only ever executes the default-branch copy of the file, so
-it cannot be exercised from a PR branch.
+an in-workflow step would be skipped in exactly those cases. It is deliberately
+absent from its own watch list, since a `workflow_run` trigger on itself would
+recurse. The trade-off is that `workflow_run` only ever executes the
+default-branch copy of the file, so it cannot be exercised from a PR branch.
 
-Counts are read out of the finished run's log (`Parsed N …`, or `Wrote N rows`
-for GLOBALG.A.P). If a log is unavailable the mail still identifies the run, its
-outcome and the failing step — every probe is best-effort by design, since an
-email that says only "failed, here is the link" beats silence. Reuses the same
-`MAIL_USERNAME` / `MAIL_PASSWORD` secrets as the digest, and is plain text with
-no attachment for the same Microsoft 365 reason.
+Counts are read out of the finished run's log, and each job phrases its tally
+differently — `Parsed N …` for most scrapers, `Wrote N rows` for GLOBALG.A.P,
+`Building dashboard: N rows` for the combined build, `N CSVs, N MB` for the digest
+— so the first pattern to match wins. If a log is unavailable the mail still
+identifies the run, its outcome and the failing step: every probe is best-effort
+by design, since an email that says only "failed, here is the link" beats
+silence. Reuses the same `MAIL_USERNAME` / `MAIL_PASSWORD` secrets as the digest,
+and is plain text with no attachment for the same Microsoft 365 reason.
+
+> **`set +e +o pipefail` is load-bearing.** Actions runs every step as
+> `bash -e {0}`, and `set -uo pipefail` does *not* clear that. With `pipefail`
+> on, a `grep` that simply finds nothing returns 1, so the pipeline returns 1,
+> so the assignment returns 1, and `-e` kills the step. That is how the first
+> GLOBALG.A.P notification died: its log has no `Parsed …` line, so the very
+> first grep found nothing and the step aborted before reaching the fallback
+> patterns — while every scraper whose log *did* match sailed through. A
+> `failure()` step now also sends a bare notification if composing ever dies
+> again, because a notifier that fails silently is the one thing this cannot be.
 
 > Without this, the only signal was GitHub's own failure email, which for a
 > *scheduled* run goes to whoever last committed the workflow file — which is how
