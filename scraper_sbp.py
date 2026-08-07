@@ -27,6 +27,8 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://sbp-cert.org/certificate-holders/"
 REQUEST_DELAY = 0.3
 MAX_PAGES_CAP = 500          # backstop against a runaway paging loop
+MAX_ATTEMPTS = 4             # per page, before giving up on the whole run
+RETRY_DELAY = 5
 USER_AGENT = "Mozilla/5.0 SBP-cert-scraper/1.0"
 
 FIELDNAMES = [
@@ -48,10 +50,32 @@ DETAIL_FIELDS = {
 
 
 def get_soup(session, page):
+    """Fetch one page, retrying both transport errors and holder-less responses.
+
+    The register sometimes answers 200 with a page that has no holder panels at
+    all — that is what emptied the 2026-08-01 run, which parsed 0 records in 18s
+    and then scraped fine on a re-run. Paging past the end re-serves earlier
+    results rather than an empty page, so "no panels" is always anomalous: it is
+    retried, and what actually came back is logged, instead of being read as the
+    end of the register. Returns None once the attempts are used up.
+    """
     params = {"sf_paged": page} if page > 1 else {}
-    r = session.get(BASE_URL, params=params, timeout=60)
-    r.raise_for_status()
-    return BeautifulSoup(r.text, "html.parser")
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            r = session.get(BASE_URL, params=params, timeout=60)
+            r.raise_for_status()
+        except requests.RequestException as exc:
+            print(f"\n  page {page} attempt {attempt}/{MAX_ATTEMPTS}: {exc}")
+        else:
+            soup = BeautifulSoup(r.text, "html.parser")
+            if soup.select(".certificate-holder"):
+                return soup
+            title = soup.title.get_text(strip=True) if soup.title else ""
+            print(f"\n  page {page} attempt {attempt}/{MAX_ATTEMPTS}: no holder panels "
+                  f"(HTTP {r.status_code}, {len(r.text)} bytes, title {title!r})")
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(RETRY_DELAY * attempt)
+    return None
 
 
 def max_page(soup):
@@ -101,8 +125,11 @@ def main():
 
     print(f"Fetching {BASE_URL} …")
     first = get_soup(session, 1)
-    shown = min(max_page(first), MAX_PAGES_CAP)     # display only; not a hard stop
-    print(f"  ~{shown} pages of results.")
+    if first is None:
+        raise SystemExit(f"No certificate holders on page 1 after {MAX_ATTEMPTS} attempts — "
+                         "the register was unreachable or its layout changed.")
+    advertised = min(max_page(first), MAX_PAGES_CAP)   # display only; not a hard stop
+    print(f"  ~{advertised} pages of results.")
 
     # Walk pages until one yields no new holders. We don't trust max_page as the
     # loop bound: Search & Filter Pro renders a *windowed* pager (1 2 3 … Next)
@@ -114,9 +141,14 @@ def main():
     while page < MAX_PAGES_CAP:
         page += 1
         soup = first if page == 1 else get_soup(session, page)
+        if soup is None:
+            raise SystemExit(f"Page {page} had no certificate holders after {MAX_ATTEMPTS} "
+                             f"attempts ({len(records)} read so far) — refusing to commit a "
+                             "truncated register.")
         holders = soup.select(".certificate-holder")
-        if not holders:
-            break
+        # The pager is windowed, so the true last page only becomes visible as we
+        # walk into it; keep the highest number it has ever shown as the check.
+        advertised = max(advertised, min(max_page(soup), MAX_PAGES_CAP))
         new = 0
         for h in holders:
             rec = parse_holder(h)
@@ -127,13 +159,24 @@ def main():
             seen.add(key)
             records.append(rec)
             new += 1
-        print(f"  Page {page}/~{shown}: total {len(records)}", end="\r", flush=True)
+        print(f"  Page {page}/~{advertised}: total {len(records)}", end="\r", flush=True)
         if new == 0:                                # only already-seen holders → past the end
             break
         time.sleep(REQUEST_DELAY)
 
     if not records:
         raise SystemExit("Parsed 0 records — page layout may have changed.")
+    # Second net under the empty-page check above: the walk should reach the last
+    # page the pager ever advertised. One short is normal — the final page often
+    # re-serves earlier holders, which is what ends the loop — but a wider gap
+    # means pages went missing.
+    if page < advertised - 1:
+        raise SystemExit(f"Stopped after {page} pages but the pager advertises {advertised} — "
+                         f"only {len(records)} holders read; refusing to commit a partial "
+                         "register.")
+    if page < advertised:
+        print(f"  (stopped at page {page} of the {advertised} advertised — the last page "
+              "re-served holders already seen.)")
     active = sum(1 for r in records if r["Status"].lower() == "active")
     print(f"\nParsed {len(records)} certificate holders ({active} Active).")
 
