@@ -1,0 +1,115 @@
+name: Scrape Notifications
+
+# Emails one short message per scrape run, success or failure.
+#
+# This listens for the *completion* of the scrape workflows rather than adding a
+# notify step to each of them: one file to maintain instead of ten, and it also
+# catches runs that die before reaching a final step (a cancelled job, or a
+# runner that times out mid-scrape) — a step inside the workflow would itself be
+# skipped in exactly those cases.
+#
+# Note: `workflow_run` only ever runs the copy of this file on the default
+# branch, and only fires for workflows that also exist there, so this cannot be
+# tested from a pull-request branch.
+
+on:
+  workflow_run:
+    workflows:
+      - Monthly ISCC Certificate Scraper
+      - Monthly SURE Certificate Scraper
+      - Monthly PEFC Certificate Scraper
+      - Monthly FSC Certificate Scraper
+      - Monthly GLOBALG.A.P Certificate Scraper
+      - Monthly GGL Certificate Scraper
+      - Monthly SBP Certificate Scraper
+      - Monthly RSPO Member Scraper
+      - Monthly FSSC Certificate Scraper
+      - Monthly ENplus Producer Scraper
+    types: [completed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read           # read the finished run's jobs and logs
+
+    steps:
+      - name: Compose the notification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TRIGGER: ${{ github.event.workflow_run.event }}
+          STARTED: ${{ github.event.workflow_run.run_started_at }}
+        run: |
+          # Deliberately not `set -e`: every probe below is best-effort, and an
+          # email saying only "failed, here is the link" still beats silence.
+          set -uo pipefail
+
+          gh run view "$RUN_ID" -R "$REPO" --log > run.log 2>/dev/null || : > run.log
+          # `gh run view --log` prefixes every line with "job<TAB>step<TAB>", then
+          # an optional BOM and an ISO timestamp.
+          unprefix() { sed -E 's/^([^\t]*\t){2}//; s/^\xef\xbb\xbf//; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //'; }
+
+          # Each scraper ends with its own count line ("Parsed 750 certificate
+          # holders (429 Active)."); GLOBALG.A.P writes "Wrote 99 rows → …".
+          COUNT=$(grep -hoE 'Parsed [0-9]+ [a-z ]+' run.log | tail -1 | sed 's/^Parsed //;s/ *$//')
+          [ -n "$COUNT" ] || COUNT=$(grep -hoE 'Wrote [0-9]+ rows' run.log | tail -1 | sed 's/^Wrote //')
+          RESULT=$(grep -hE 'Parsed [0-9]|Wrote [0-9]+ rows' run.log | tail -1 | unprefix)
+          COMMIT=$(grep -hoE '(chore: [a-z][^"]*[0-9]{4}-[0-9]{2}-[0-9]{2}|No changes to commit)' run.log | tail -1)
+
+          FAILED_STEP=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" \
+            --jq '[.jobs[].steps[] | select(.conclusion=="failure") | .name] | first // ""' 2>/dev/null)
+
+          if [ "$CONCLUSION" = "success" ]; then ICON="✅"; else ICON="❌"; fi
+
+          {
+            echo "$RUN_NAME — $CONCLUSION"
+            echo
+            echo "  Result:  ${RESULT:-(no count line in the log)}"
+            echo "  Commit:  ${COMMIT:-(nothing committed)}"
+            [ -n "${FAILED_STEP:-}" ] && echo "  Failed:  at step \"$FAILED_STEP\""
+            echo "  Trigger: $TRIGGER"
+            echo "  Started: $STARTED"
+            echo "  Run:     $RUN_URL"
+            if [ -n "${FAILED_STEP:-}" ]; then
+              # Column 2 of the log is the step name, so the failing step's own
+              # output can be quoted without the surrounding job noise.
+              TAIL=$(awk -F'\t' -v s="$FAILED_STEP" 'NF>2 && $2==s {print $3}' run.log |
+                     sed -E 's/^\xef\xbb\xbf//; s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' |
+                     grep -vE '^(##\[|\[command\]|\[36;1m|[[:space:]]*$)' | tail -12)
+              if [ -n "$TAIL" ]; then
+                echo
+                echo "Last lines of that step:"
+                echo "$TAIL" | sed 's/^/    /'
+              fi
+            fi
+            echo
+            echo "Automated message — do not reply."
+          } > body.txt
+
+          {
+            echo "SUBJECT=[scrapers] $ICON $RUN_NAME${COUNT:+ — $COUNT}"
+            echo "BODY<<EOF_NOTIFY_BODY"
+            cat body.txt
+            echo "EOF_NOTIFY_BODY"
+          } >> "$GITHUB_ENV"
+
+      - name: Send email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          to: maris.zamovskis@bmcertification.com
+          from: Certificate Scrapers <${{ secrets.MAIL_USERNAME }}>
+          subject: ${{ env.SUBJECT }}
+          # Plain text, no attachment: a Gmail-sent attachment to a Microsoft 365
+          # inbox gets quarantined silently (see the README's email notes).
+          body: ${{ env.BODY }}
