@@ -296,7 +296,7 @@ The portal's *Product* search **requires both a product and a country** (a
 product-only search errors *"Please input Country"*), so the only way to
 enumerate is to walk the grid of products × countries. The scraper therefore
 scans a **configured set of countries** (default **Latvia, Estonia, Lithuania,
-Finland**)
+Finland, Sweden**)
 across **all ~727 product options** (the full crop list, kept in
 `ggap_products.json`) and collects the producer rows for each, de-duplicated by
 `GGN + Country + Product`. A producer certified for several crops appears once
@@ -323,6 +323,12 @@ per crop. Columns:
 > workflow's 330-minute timeout. The country name must match the portal's own
 > dropdown option exactly, which "Finland" does.
 
+> **Sweden** was added to the scope on 2026-08-26. A standalone Finland+Sweden
+> scrape that day returned **114 producer-rows for Finland and 107 for Sweden**
+> (61 unique producers over 71 products), confirming Sweden is another dense
+> Nordic market and that its name matches the portal dropdown. It adds roughly
+> one more +25 min pass, still well inside the 330-minute timeout.
+
 ```bash
 pip install -r requirements-ggap.txt
 python -m playwright install chromium
@@ -330,7 +336,7 @@ python scraper_ggap.py
 python generate_excel_ggap.py
 ```
 
-Env vars: `GGAP_COUNTRIES="Latvia,Estonia,Lithuania,Finland"` (the scope),
+Env vars: `GGAP_COUNTRIES="Latvia,Estonia,Lithuania,Finland,Sweden"` (the scope),
 `GGAP_PRODUCTS="Apple,Tomato"` (scan specific products instead of the full list),
 `GGAP_MAX_PRODUCTS=20` (cap for quick tests), `GGAP_HEADFUL=1` (visible browser),
 `GGAP_ENUM=1` (re-enumerate the product list into `ggap_products.json` and exit).

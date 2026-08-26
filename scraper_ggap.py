@@ -40,7 +40,7 @@ URL = ("https://prod.osapiens.cloud/portal/webbundle/foodplus/field-service-os/"
        "supply-chain-portal?app-route-hash=%252Fcertificates")
 
 COUNTRIES = [c.strip() for c in
-             os.environ.get("GGAP_COUNTRIES", "Latvia,Estonia,Lithuania,Finland").split(",") if c.strip()]
+             os.environ.get("GGAP_COUNTRIES", "Latvia,Estonia,Lithuania,Finland,Sweden").split(",") if c.strip()]
 MAX_PRODUCTS = int(os.environ["GGAP_MAX_PRODUCTS"]) if os.environ.get("GGAP_MAX_PRODUCTS") else None
 HEADFUL = os.environ.get("GGAP_HEADFUL") == "1"
 PRODUCTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ggap_products.json")
