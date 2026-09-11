@@ -40,7 +40,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git rm -f --ignore-unmatch "GGAP certificates"*.csv
-          git add "GGAP certificates"*.xlsx
+          git add GGAP
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly GLOBALG.A.P certificate scrape $(date -u +%Y-%m-%d)"
           # Sibling scrape workflows commit to master while this one runs, so a

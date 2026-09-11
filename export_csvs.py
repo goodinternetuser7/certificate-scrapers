@@ -42,7 +42,7 @@ def main():
     os.makedirs(EXPORT_DIR, exist_ok=True)
     produced = []
     for scheme in SCHEMES:
-        xlsx = f"{scheme} certificates latest.xlsx"
+        xlsx = f"{scheme}/{scheme} certificates latest.xlsx"
         if not os.path.exists(xlsx):
             print(f"  skip {scheme}: {xlsx} not found")
             continue

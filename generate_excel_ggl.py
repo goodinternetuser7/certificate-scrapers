@@ -44,8 +44,8 @@ def main():
     build_excel(
         rows, country_totals, cb_totals, cb_by_country, country_by_cb, csv_path,
         title="GGL Certificate Holders — Interactive Dashboard",
-        dated_out=f"{PREFIX} {date_part}.xlsx",
-        latest_out=f"{PREFIX} latest.xlsx",
+        dated_out=f"{PREFIX.split()[0]}/{PREFIX} {date_part}.xlsx",
+        latest_out=f"{PREFIX.split()[0]}/{PREFIX} latest.xlsx",
         dim2_singular="Certification Body", dim2_short="CB",
         data_fieldnames=DATA_FIELDS, data_widths=DATA_WIDTHS,
         kpi_total_label="Total Certificate Holders",

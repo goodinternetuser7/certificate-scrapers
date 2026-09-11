@@ -44,8 +44,8 @@ def main():
     build_excel(
         rows, country_totals, type_totals, type_by_country, country_by_type, csv_path,
         title="FSC Valid Certificates — Interactive Dashboard",
-        dated_out=f"{PREFIX} {date_part}.xlsx",
-        latest_out=f"{PREFIX} latest.xlsx",
+        dated_out=f"{PREFIX.split()[0]}/{PREFIX} {date_part}.xlsx",
+        latest_out=f"{PREFIX.split()[0]}/{PREFIX} latest.xlsx",
         dim2_singular="Certificate Type", dim2_short="Type",
         data_fieldnames=DATA_FIELDS, data_widths=DATA_WIDTHS,
         kpi_total_label="Total Valid Certificates",

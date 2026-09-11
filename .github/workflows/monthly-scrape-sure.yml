@@ -34,7 +34,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git rm -f --ignore-unmatch "SURE certificates"*.csv
-          git add "SURE certificates"*.xlsx
+          git add SURE
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly SURE certificate scrape $(date -u +%Y-%m-%d)"
           # Sibling scrape workflows commit to master while this one runs, so a

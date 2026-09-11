@@ -43,8 +43,8 @@ def main():
     build_excel(
         rows, country_totals, prod_totals, prod_by_country, country_by_prod, csv_path,
         title="GLOBALG.A.P. Producers (Baltics) — Interactive Dashboard",
-        dated_out=f"{PREFIX} {date_part}.xlsx",
-        latest_out=f"{PREFIX} latest.xlsx",
+        dated_out=f"{PREFIX.split()[0]}/{PREFIX} {date_part}.xlsx",
+        latest_out=f"{PREFIX.split()[0]}/{PREFIX} latest.xlsx",
         dim2_singular="Product", dim2_short="Product",
         data_fieldnames=DATA_FIELDS, data_widths=DATA_WIDTHS,
         kpi_total_label="Total Producer Records",

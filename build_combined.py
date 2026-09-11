@@ -109,7 +109,7 @@ def iso_date(v):
 
 
 def read_data(scheme):
-    wb = load_workbook(f"{scheme} certificates latest.xlsx", read_only=True, data_only=True)
+    wb = load_workbook(f"{scheme}/{scheme} certificates latest.xlsx", read_only=True, data_only=True)
     try:
         ws = wb["Data"]
         it = ws.iter_rows(values_only=True)
@@ -254,7 +254,7 @@ def add_cb_to_dashboard(wb, combined, top_n=15):
 def main():
     combined, per_scheme = [], {}
     for scheme in SCHEMES:
-        if not glob.glob(f"{scheme} certificates latest.xlsx"):
+        if not glob.glob(f"{scheme}/{scheme} certificates latest.xlsx"):
             print(f"  skip {scheme}: dashboard not found")
             continue
         headers, rows = read_data(scheme)
