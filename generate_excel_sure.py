@@ -26,8 +26,8 @@ def main():
         rows, country_totals, cb_totals, cb_by_country, country_by_cb,
         csv_path,
         title="SURE Active Certificates — Interactive Dashboard",
-        dated_out=f"{PREFIX} {date_part}.xlsx",
-        latest_out=f"{PREFIX} latest.xlsx",
+        dated_out=f"{PREFIX.split()[0]}/{PREFIX} {date_part}.xlsx",
+        latest_out=f"{PREFIX.split()[0]}/{PREFIX} latest.xlsx",
     )
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git rm -f --ignore-unmatch "GGL certificates"*.csv
-          git add "GGL certificates"*.xlsx
+          git add GGL
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly GGL certificate scrape $(date -u +%Y-%m-%d)"
           # Sibling scrape workflows commit to master while this one runs, so a

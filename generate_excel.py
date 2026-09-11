@@ -9,6 +9,7 @@ Dashboard sheet layout:
 
 import csv
 import glob
+import os
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -330,13 +331,17 @@ def build_excel(rows, country_totals, cb_totals, cb_by_country, country_by_cb, c
     ws.add_chart(bar, "E19")
 
     # ── Save ──
+    # Each scheme's workbooks live in a per-scheme folder (ISCC/, RSPO/, …),
+    # named after the first token of the prefix.
+    folder = default_prefix.split()[0]
     if dated_out is None:
         date_part = csv_path.replace(f"{default_prefix} ", "").replace(".csv", "")
-        dated_out = f"{default_prefix} {date_part}.xlsx"
+        dated_out = os.path.join(folder, f"{default_prefix} {date_part}.xlsx")
     if latest_out is None:
-        latest_out = f"{default_prefix} latest.xlsx"
+        latest_out = os.path.join(folder, f"{default_prefix} latest.xlsx")
     if save:
         for path in (dated_out, latest_out):
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
             wb.save(path)
             print(f"Saved → {path}")
     return wb

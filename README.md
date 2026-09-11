@@ -17,10 +17,14 @@ this repo via GitHub Actions.
 | **FSSC** | [fssc.com/public-register](https://www.fssc.com/public-register/) | `scraper_fssc.py` | `generate_excel_fssc.py` | `monthly-scrape-fssc.yml` (13:00) |
 | **ENplus** | [enplus-pellets.eu/producer](https://enplus-pellets.eu/producer/) | `scraper_enplus.py` | `generate_excel_enplus.py` | `monthly-scrape-enplus.yml` (14:00) |
 
-Each run produces `<Scheme> certificates latest.xlsx` (most recent) and a dated
-`<Scheme> certificates YYYY.MM.DD.xlsx` archive (RSPO, a member register, uses
-`RSPO members …`). You can also trigger any scraper manually from the
-**Actions** tab → *Run workflow*.
+Each scheme's workbooks live in **its own folder** (`ISCC/`, `SURE/`, `FSC/`,
+`FSSC/`, `GGL/`, `SBP/`, `GGAP/`, `RSPO/`, `PEFC/`, `ENplus/`). A run produces
+`<Scheme>/<Scheme> certificates latest.xlsx` (most recent) and a dated
+`<Scheme>/<Scheme> certificates YYYY.MM.DD.xlsx` archive (RSPO, a member register,
+uses `RSPO/RSPO members …`). The folder is named after the first token of the
+prefix, so adding a scheme needs no path wiring. The combined workbook stays at
+the repository root (see below). You can also trigger any scraper manually from
+the **Actions** tab → *Run workflow*.
 
 The workflows are staggered an hour apart, but GitHub's cron is delayed by hours
 and the long scrapes overlap, so a run can finish and find that a sibling has

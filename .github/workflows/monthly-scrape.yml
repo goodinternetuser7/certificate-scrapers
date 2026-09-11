@@ -35,7 +35,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # Stage xlsx files; remove any stale csvs that may be left in the repo
           git rm -f --ignore-unmatch "ISCC certificates"*.csv
-          git add "ISCC certificates"*.xlsx
+          git add ISCC
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly ISCC certificate scrape $(date -u +%Y-%m-%d)"
           # Sibling scrape workflows commit to master while this one runs, so a

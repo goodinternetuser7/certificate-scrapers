@@ -38,7 +38,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git rm -f --ignore-unmatch "PEFC certificates"*.csv
-          git add "PEFC certificates"*.xlsx
+          git add PEFC
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly PEFC certificate scrape $(date -u +%Y-%m-%d)"
           # Sibling scrape workflows commit to master while this one runs, so a

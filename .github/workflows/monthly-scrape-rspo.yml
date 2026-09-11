@@ -35,7 +35,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git rm -f --ignore-unmatch "RSPO members"*.csv
-          git add "RSPO members"*.xlsx
+          git add RSPO
           git diff --cached --quiet && echo "No changes to commit." && exit 0
           git commit -m "chore: monthly RSPO member scrape $(date -u +%Y-%m-%d)"
           # Sibling scrape workflows commit to master while this one runs, so a
