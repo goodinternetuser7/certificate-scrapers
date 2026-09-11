@@ -18,8 +18,11 @@ the grid of products x countries. We restrict countries to a configured set
 product and de-duplicate.
 
 Env:
-    GGAP_COUNTRIES     comma list of country names
-                       (default "Latvia,Estonia,Lithuania,Finland")
+    GGAP_COUNTRIES     semicolon list of country names (semicolon, not comma,
+                       because some portal names contain a comma, e.g.
+                       "Moldova, Republic of")
+                       (default "Latvia;Estonia;Lithuania;Finland;Sweden;
+                       Romania;Moldova, Republic of")
     GGAP_MAX_PRODUCTS  cap products scanned (local testing); unset = all
     GGAP_PRODUCTS      comma list of products to scan instead of ggap_products.json
     GGAP_HEADFUL       set to 1 to watch the browser
@@ -39,8 +42,12 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 URL = ("https://prod.osapiens.cloud/portal/webbundle/foodplus/field-service-os/"
        "supply-chain-portal?app-route-hash=%252Fcertificates")
 
+# Split on ';' not ',' — the portal spells Moldova "Moldova, Republic of",
+# and set_country() needs that exact name, comma and all.
 COUNTRIES = [c.strip() for c in
-             os.environ.get("GGAP_COUNTRIES", "Latvia,Estonia,Lithuania,Finland,Sweden").split(",") if c.strip()]
+             os.environ.get("GGAP_COUNTRIES",
+                            "Latvia;Estonia;Lithuania;Finland;Sweden;Romania;Moldova, Republic of").split(";")
+             if c.strip()]
 MAX_PRODUCTS = int(os.environ["GGAP_MAX_PRODUCTS"]) if os.environ.get("GGAP_MAX_PRODUCTS") else None
 HEADFUL = os.environ.get("GGAP_HEADFUL") == "1"
 PRODUCTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ggap_products.json")
