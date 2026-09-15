@@ -1,167 +1,131 @@
 #!/usr/bin/env python3
 """
-Scrapes the Green Gold Label (GGL) certificate holder list.
+Scrapes the Green Gold Label (GGL) certificate-holder register.
 
-GGL doesn't expose a search API or an HTML register — instead it publishes the
-full holder list as a **PDF** (exported from Excel) linked from its certification
-page: https://greengoldlabel.com/certification/ . This scraper finds the most
-recent "GGL certificate holder list" PDF linked there, downloads it, and parses
-the table into a CSV.
+GGL replaced its PDF holder-list (previously linked from /certification/) with a
+live register at https://greengoldlabel.com/participants/register that publishes
+an official structured export: an .xlsx behind /api/register-export. We fetch
+that export directly and reshape it into our CSV, which is far more robust than
+the old PDF column-binning (no fixed x-position grid, no wrapped-cell merging).
 
-The PDF is a plain multi-page table, but long cells (participant name, role, CB)
-wrap across several lines. Each real row is anchored by a numeric USI in the
-left column; lines with no USI are wrapped continuations of the row above. We
-assign every word to a column by its x-position (the layout is a fixed Excel
-grid) and merge continuation lines back into their anchor row.
+The register page links the export as `registerDownload.href`; we read that href
+off the page each run and fall back to the well-known default if it moves.
 
-Output columns:
+Output columns (unchanged, so the downstream dashboard/combined pipeline is
+untouched):
   USI, Participant name, Country, Participant role, Regulation, Standards,
   Type of biomass, Valid from, Valid till, CB, Status
 
 Unlike the other schemes' registers this list includes *all* statuses (Valid,
-Suspended, Withdrawn, Terminated, Expired), so we keep the Status column rather
+Suspended, Expired, Revoked, Resigned, …), so we keep the Status column rather
 than pre-filtering — downstream can filter on it.
 """
 
 import csv
+import io
 import re
 import tempfile
 from datetime import datetime, timezone
 
-import pdfplumber
+import openpyxl
 import requests
 
-CERT_PAGE = "https://greengoldlabel.com/certification/"
-PDF_HREF_RE = re.compile(
-    r'href="(https://greengoldlabel\.com/wp-content/uploads/\d{4}/\d{2}/'
-    r'GGL[- ]certificate[- ]holder[- ]list[^"]*?\.pdf)"',
-    re.I,
-)
-USER_AGENT = "Mozilla/5.0 GGL-cert-scraper/1.0"
+REGISTER_PAGE = "https://greengoldlabel.com/participants/register"
+DEFAULT_EXPORT = "https://greengoldlabel.com/api/register-export"
+EXPORT_HREF_RE = re.compile(r'href="(/api/register-export[^"]*)"', re.I)
+BASE = "https://greengoldlabel.com"
+USER_AGENT = "Mozilla/5.0 GGL-cert-scraper/2.0"
 
 FIELDNAMES = [
     "USI", "Participant name", "Country", "Participant role", "Regulation",
     "Standards", "Type of biomass", "Valid from", "Valid till", "CB", "Status",
 ]
 
-# Column left/right x-boundaries derived from the PDF header row (A4 landscape,
-# 842pt wide). The last column is open-ended. Boundaries are midpoints between
-# adjacent header labels, so a word is binned by its horizontal centre.
-COL_BOUNDS = [
-    (0, 140, "USI"),
-    (140, 261, "Participant name"),
-    (261, 337, "Country"),
-    (337, 420, "Participant role"),
-    (420, 474, "Regulation"),
-    (474, 543, "Standards"),
-    (543, 585, "Type of biomass"),
-    (585, 645, "Valid from"),
-    (645, 700, "Valid till"),
-    (700, 765, "CB"),
-    (765, 9999, "Status"),
-]
-COLS = [c for _, _, c in COL_BOUNDS]
-
-USI_ANCHOR_RE = re.compile(r"^(\d{15,})")   # a real row anchor (18-19 digit USI)
-# Per-page footer: a "DD/MM/YYYY" date, optionally trailed by the page number.
-# (A bare page-number line lands in the Status column and is dropped by the
-# continuation guard, so it needs no rule here — and a rule for it would wrongly
-# swallow wrapped values like a lone "5" from "Cat 5".)
-FOOTER_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}(?:\s+\d+)?$")
-STATUSES = ("Valid", "Suspended", "Withdrawn", "Terminated", "Expired")
-FOOTER_DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")  # per-page footer date
-MONTHS = {
-    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
-    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
-    "december": 12,
+# The export's own header labels → our CSV field names. Matched case-insensitively
+# on the stripped label, so column order and minor casing shifts don't matter.
+SRC_TO_FIELD = {
+    "usi": "USI",
+    "name": "Participant name",
+    "country": "Country",
+    "role": "Participant role",
+    "regulation": "Regulation",
+    "standards": "Standards",
+    "biomass": "Type of biomass",
+    "valid from": "Valid from",
+    "valid till": "Valid till",
+    "certification body": "CB",
+    "status": "Status",
 }
 
 
-def _col_of(x):
-    for lo, hi, name in COL_BOUNDS:
-        if lo <= x < hi:
-            return name
-    return "Status"
+def find_export_url(session):
+    """Read the /api/register-export href off the register page, so a path change
+    is picked up automatically; fall back to the known default if it's absent."""
+    try:
+        r = session.get(REGISTER_PAGE, timeout=60)
+        r.raise_for_status()
+        m = EXPORT_HREF_RE.search(r.text)
+        if m:
+            return BASE + m.group(1)
+    except requests.RequestException as e:
+        print(f"  (register page unreadable: {e}; using default export URL)")
+    return DEFAULT_EXPORT
 
 
-def _pdf_date(url):
-    """Sortable date for a holder-list URL, for picking the newest link. Uses the
-    reliable /uploads/YYYY/MM/ path (always present per PDF_HREF_RE) as the base,
-    refined to the day from the filename's 'DD-Month-YYYY' when it parses."""
-    ym = re.search(r"/uploads/(\d{4})/(\d{2})/", url)
-    year, month, day = (int(ym.group(1)), int(ym.group(2)), 1) if ym else (1970, 1, 1)
-    m = re.search(r"(\d{1,2})[- ]([A-Za-z]+)[- ](\d{4})\.pdf$", url)
-    if m and m.group(2).lower() in MONTHS:
-        year, month, day = int(m.group(3)), MONTHS[m.group(2).lower()], int(m.group(1))
-    return datetime(year, month, day)
+def _norm(v):
+    """Cell value → trimmed string; render dates as ISO YYYY-MM-DD."""
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return v.strftime("%Y-%m-%d")
+    return str(v).strip()
 
 
-def find_latest_pdf_url(session):
-    r = session.get(CERT_PAGE, timeout=60)
-    r.raise_for_status()
-    urls = list(dict.fromkeys(PDF_HREF_RE.findall(r.text)))
-    if not urls:
-        raise SystemExit(f"No holder-list PDF link found on {CERT_PAGE}")
-    urls.sort(key=_pdf_date)
-    return urls[-1]
+def parse_export(content):
+    """Parse the official register .xlsx (bytes) into our CSV rows.
 
+    The sheet carries a few title/meta rows, then a header row starting with the
+    'USI' cell, then the data. We locate the header by that 'USI' cell and map
+    every column by its label, so we never depend on a fixed column order."""
+    wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    ws = wb.active
 
-def parse_pdf(path):
+    rows = list(ws.iter_rows(values_only=True))
+    list_date = ""
+    header_idx = None
+    for i, row in enumerate(rows):
+        first = _norm(row[0] if row else "")
+        if first.lower().startswith("list date"):
+            list_date = first.split(":", 1)[-1].strip()
+        if first == "USI":
+            header_idx = i
+            break
+    if header_idx is None:
+        raise SystemExit("No 'USI' header row found — register export layout may "
+                         "have changed.")
+    if list_date:
+        print(f"  register list date: {list_date}")
+
+    # column index → our field name (only columns we recognise)
+    col_field = {}
+    for ci, label in enumerate(rows[header_idx]):
+        key = _norm(label).lower()
+        if key in SRC_TO_FIELD:
+            col_field[ci] = SRC_TO_FIELD[key]
+    missing = set(FIELDNAMES) - set(col_field.values())
+    if missing:
+        raise SystemExit(f"Register export is missing expected columns: {sorted(missing)}")
+
     records = []
-    with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
-            # Cluster words into visual lines by their (rounded) top coordinate.
-            lines = {}
-            for w in page.extract_words(use_text_flow=False, keep_blank_chars=False):
-                lines.setdefault(round(w["top"] / 3) * 3, []).append(w)
-
-            for key in sorted(lines):
-                buckets = {c: [] for c in COLS}
-                for w in sorted(lines[key], key=lambda w: w["x0"]):
-                    buckets[_col_of((w["x0"] + w["x1"]) / 2)].append(w["text"])
-                cell = {c: " ".join(buckets[c]).strip() for c in COLS}
-                joined = " ".join(cell.values()).strip()
-
-                if not joined:
-                    continue
-                # Skip repeated page furniture: title, the two header lines
-                # ("USI …" and its "biomass" wrap), and the footer date/page no.
-                if "GGL Certificate Holder List" in joined:
-                    continue
-                if cell["USI"] == "USI":
-                    continue
-                if joined == "biomass":
-                    continue
-                if FOOTER_RE.match(joined):
-                    continue
-
-                anchor = USI_ANCHOR_RE.match(cell["USI"])
-                if anchor:
-                    cell["USI"] = anchor.group(1)   # drop any stray trailing chars
-                    records.append(cell)
-                elif records and not (cell["USI"] or cell["Valid from"]
-                                      or cell["Valid till"] or cell["Status"]):
-                    # A genuine wrapped continuation carries no USI, dates, or
-                    # status — only overflow text in name/role/standards/CB. This
-                    # guard stops stray page furniture merging into a real row.
-                    for c in COLS:
-                        if cell[c]:
-                            records[-1][c] = (records[-1][c] + " " + cell[c]).strip()
-
-    # Occasionally the Excel export glues the CB and Status cells into one word
-    # (e.g. "BM CertificationValid" with no space), so the status lands in the CB
-    # column and Status is left empty. Split the trailing status keyword back out.
-    for rec in records:
-        if not rec["Status"]:
-            for st in STATUSES:
-                # Only split genuine glue ("…CertificationValid"): the status
-                # suffix must follow a lowercase letter (a word-boundary run-on),
-                # never a real CB name that merely ends in a capitalised word.
-                if (rec["CB"].endswith(st) and len(rec["CB"]) > len(st)
-                        and rec["CB"][-len(st) - 1].islower()):
-                    rec["CB"] = rec["CB"][: -len(st)].strip()
-                    rec["Status"] = st
-                    break
+    for row in rows[header_idx + 1:]:
+        if not row or not _norm(row[0] if row else ""):
+            continue  # skip blank / trailing note rows (a data row always has a USI)
+        rec = {f: "" for f in FIELDNAMES}
+        for ci, field in col_field.items():
+            if ci < len(row):
+                rec[field] = _norm(row[ci])
+        if rec["USI"]:
+            records.append(rec)
     return records
 
 
@@ -169,20 +133,15 @@ def main():
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
 
-    print(f"Finding latest holder-list PDF on {CERT_PAGE} …")
-    pdf_url = find_latest_pdf_url(session)
-    print(f"  → {pdf_url}")
-
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        resp = session.get(pdf_url, timeout=120)
-        resp.raise_for_status()
-        tmp.write(resp.content)
-        tmp_path = tmp.name
+    export_url = find_export_url(session)
+    print(f"Downloading GGL register export from {export_url} …")
+    resp = session.get(export_url, timeout=120)
+    resp.raise_for_status()
     print(f"Downloaded {len(resp.content):,} bytes. Parsing …")
 
-    records = parse_pdf(tmp_path)
+    records = parse_export(resp.content)
     if not records:
-        raise SystemExit("Parsed 0 records — PDF layout may have changed.")
+        raise SystemExit("Parsed 0 records — register export may have changed.")
     valid = sum(1 for r in records if r["Status"].lower() == "valid")
     print(f"Parsed {len(records)} holders ({valid} Valid).")
 

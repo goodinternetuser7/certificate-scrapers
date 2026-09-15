@@ -2,8 +2,8 @@ name: Monthly GGL Certificate Scraper
 
 on:
   schedule:
-    # 10:00 UTC on the 8th — GGL publishes its holder-list PDF early each month
-    # (e.g. "6 July"), so we run a few days later to pick up the fresh list.
+    # 10:00 UTC on the 8th — GGL refreshes its live register early each month,
+    # so we run a few days later to pick up the fresh list.
     - cron: '0 10 8 * *'
   workflow_dispatch:
 
